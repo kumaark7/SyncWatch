@@ -1,6 +1,8 @@
 node_modules/
 dist/
+target/
 .env
-client/.env
-server/.env
+frontend/.env
 *.log
+.idea/
+.vscode/
