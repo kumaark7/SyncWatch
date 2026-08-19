@@ -1,13 +1,14 @@
 {
   "name": "syncwatch-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build"
   },
   "dependencies": {
+    "@stomp/stompjs": "^7.1.1",
     "@vitejs/plugin-react": "^5.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
