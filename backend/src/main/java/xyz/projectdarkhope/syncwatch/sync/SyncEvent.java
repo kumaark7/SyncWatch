@@ -9,7 +9,8 @@ public record SyncEvent(
         String fileName,
         long serverTime,
         String senderClientId,
-        String hostClientId
+        String hostClientId,
+        Long seekId
 ) {
     public static SyncEvent state(Room room) {
         return new SyncEvent(
@@ -19,7 +20,8 @@ public record SyncEvent(
                 room.getFileName(),
                 System.currentTimeMillis(),
                 null,
-                room.getHostClientId()
+                room.getHostClientId(),
+                room.getSeekVersion()
         );
     }
 
@@ -31,7 +33,8 @@ public record SyncEvent(
                 room.getFileName(),
                 System.currentTimeMillis(),
                 senderClientId,
-                room.getHostClientId()
+                room.getHostClientId(),
+                room.getSeekVersion()
         );
     }
 
@@ -43,7 +46,21 @@ public record SyncEvent(
                 room.getFileName(),
                 System.currentTimeMillis(),
                 senderClientId,
-                room.getHostClientId()
+                room.getHostClientId(),
+                room.getSeekVersion()
+        );
+    }
+
+    public static SyncEvent fileCleared(Room room, String senderClientId) {
+        return new SyncEvent(
+                "FILE_CLEARED",
+                0,
+                false,
+                null,
+                System.currentTimeMillis(),
+                senderClientId,
+                room.getHostClientId(),
+                room.getSeekVersion()
         );
     }
 }

@@ -43,6 +43,14 @@ button:hover { background: #232329; }
 
 .join { display: flex; gap: 8px; }
 
+.googleActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .join input {
   flex: 1;
   background: #161619;

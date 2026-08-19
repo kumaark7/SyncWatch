@@ -9,6 +9,7 @@ public class Room {
     private volatile boolean playing;
     private volatile double currentTime;
     private volatile long updatedAt;
+    private volatile long seekVersion;
 
     public Room(String id) {
         this.id = id;
@@ -24,6 +25,7 @@ public class Room {
     public void setAccessToken(String v) { accessToken = v; }
     public String getHostClientId() { return hostClientId; }
     public boolean isPlaying() { return playing; }
+    public long getSeekVersion() { return seekVersion; }
     public boolean hasFile() { return fileId != null && !fileId.isBlank(); }
     public boolean hasHost() { return hostClientId != null && !hostClientId.isBlank(); }
     public boolean isHost(String clientId) {
@@ -45,10 +47,22 @@ public class Room {
         updatedAt = System.currentTimeMillis();
     }
 
+    public synchronized void clearFile() {
+        fileId = null;
+        fileName = null;
+        accessToken = null;
+        resetPlayback();
+    }
+
     public synchronized void updatePlayback(double time, boolean playing) {
         currentTime = Math.max(0, time);
         this.playing = playing;
         updatedAt = System.currentTimeMillis();
+    }
+
+    public synchronized void updateSeek(double time, boolean playing) {
+        seekVersion++;
+        updatePlayback(time, playing);
     }
 
     public synchronized double getCurrentTime() {

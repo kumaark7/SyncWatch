@@ -6,13 +6,25 @@ import { useRoomSocket } from "./useRoomSocket";
 import type { RoomState } from "./types";
 import "./style.css";
 
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const TOKEN_EXPIRY_SKEW_MS = 60000;
+
+type GoogleConnection = {
+  accessToken: string;
+  expiresAt: number;
+};
+
 function roomFromUrl() {
   const match = window.location.pathname.match(/^\/room\/([A-Z0-9]+)/i);
   return match?.[1]?.toUpperCase() || "";
 }
 
-function isGuestInvite() {
-  return new URLSearchParams(window.location.search).get("guest") === "1";
+function googleApisReady() {
+  return Boolean(
+    window.google?.accounts?.oauth2 &&
+      window.gapi
+  );
 }
 
 export default function App() {
@@ -20,6 +32,10 @@ export default function App() {
   const [joinCode, setJoinCode] = useState("");
   const [room, setRoom] = useState<RoomState | null>(null);
   const [toast, setToast] = useState("");
+  const [googleConnection, setGoogleConnection] =
+    useState<GoogleConnection | null>(null);
+  const [googleReady, setGoogleReady] =
+    useState(googleApisReady());
 
   const {
     connected,
@@ -27,6 +43,19 @@ export default function App() {
     sendControl,
     clientId
   } = useRoomSocket(roomId);
+
+  useEffect(() => {
+    if (googleReady) return;
+
+    const timer = window.setInterval(() => {
+      if (googleApisReady()) {
+        setGoogleReady(true);
+        window.clearInterval(timer);
+      }
+    }, 250);
+
+    return () => window.clearInterval(timer);
+  }, [googleReady]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -64,6 +93,19 @@ export default function App() {
         };
       }
 
+      if (lastEvent.type === "FILE_CLEARED") {
+        return {
+          ...previous,
+          hasFile: false,
+          fileName: null,
+          playing: false,
+          currentTime: 0,
+          serverTime: lastEvent.serverTime,
+          hostAssigned: Boolean(eventHost) || previous.hostAssigned,
+          isHost: eventHost ? isHost : previous.isHost
+        };
+      }
+
       return {
         ...previous,
         playing: lastEvent.playing,
@@ -75,10 +117,19 @@ export default function App() {
     });
   }, [lastEvent, clientId]);
 
+  useEffect(() => {
+    if (room && !room.isHost) {
+      setGoogleConnection(null);
+    }
+  }, [room]);
+
   async function createRoom() {
-    const response = await fetch(`${API_URL}/api/rooms`, {
-      method: "POST"
-    });
+    const response = await fetch(
+      `${API_URL}/api/rooms?clientId=${encodeURIComponent(clientId)}`,
+      {
+        method: "POST"
+      }
+    );
 
     if (!response.ok) {
       alert("Could not create room.");
@@ -110,6 +161,103 @@ export default function App() {
     history.pushState({}, "", `/room/${code}?guest=1`);
     setRoomId(code);
     setRoom(data);
+  }
+
+  function requestGoogleAccessToken(prompt = "") {
+    return new Promise<GoogleConnection | null>((resolve) => {
+      if (!CLIENT_ID) {
+        alert("Missing VITE_GOOGLE_CLIENT_ID in frontend/.env");
+        resolve(null);
+        return;
+      }
+
+      if (!googleReady || !window.google?.accounts?.oauth2) {
+        resolve(null);
+        return;
+      }
+
+      const tokenClient =
+        window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: DRIVE_SCOPE,
+
+          callback: (tokenResponse: any) => {
+            if (
+              tokenResponse.error ||
+              !tokenResponse.access_token
+            ) {
+              console.error(
+                "Google OAuth token error:",
+                tokenResponse.error ||
+                  "No access token returned"
+              );
+              alert(
+                "Google Drive authorization failed. Please try again."
+              );
+              resolve(null);
+              return;
+            }
+
+            const expiresInSeconds =
+              Number(tokenResponse.expires_in) || 3600;
+
+            resolve({
+              accessToken: tokenResponse.access_token,
+              expiresAt:
+                Date.now() +
+                expiresInSeconds * 1000 -
+                TOKEN_EXPIRY_SKEW_MS
+            });
+          },
+
+          error_callback: (error: any) => {
+            console.error(
+              "Google OAuth popup error:",
+              error
+            );
+            resolve(null);
+          }
+        });
+
+      tokenClient.requestAccessToken({ prompt });
+    });
+  }
+
+  async function connectGoogleDrive() {
+    if (!googleReady) return;
+
+    if (
+      googleConnection &&
+      googleConnection.expiresAt > Date.now()
+    ) {
+      setToast("Google Drive already connected");
+      window.setTimeout(() => setToast(""), 2000);
+      return;
+    }
+
+    const connection = await requestGoogleAccessToken("consent");
+    if (!connection) return;
+
+    setGoogleConnection(connection);
+    setToast("Google Drive connected");
+    window.setTimeout(() => setToast(""), 2000);
+  }
+
+  async function getValidGoogleAccessToken() {
+    if (!googleReady) return null;
+
+    if (
+      googleConnection &&
+      googleConnection.expiresAt > Date.now()
+    ) {
+      return googleConnection.accessToken;
+    }
+
+    const connection = await requestGoogleAccessToken();
+    if (!connection) return null;
+
+    setGoogleConnection(connection);
+    return connection.accessToken;
   }
 
   async function selectFile(file: {
@@ -145,6 +293,40 @@ export default function App() {
 
     const state = await response.json();
     setRoom(state);
+  }
+
+  async function disconnectGoogleDrive() {
+    const token = googleConnection?.accessToken;
+    setGoogleConnection(null);
+
+    if (token && googleReady && window.google?.accounts?.oauth2) {
+      window.google.accounts.oauth2.revoke(token, () => {});
+    }
+
+    if (room?.isHost) {
+      const response = await fetch(
+        `${API_URL}/api/rooms/${roomId}/file?clientId=${encodeURIComponent(clientId)}`,
+        {
+          method: "DELETE"
+        }
+      );
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+
+        alert(
+          result?.error ||
+            "Could not disconnect Google Drive."
+        );
+        return;
+      }
+
+      const state = await response.json();
+      setRoom(state);
+    }
+
+    setToast("Google Drive disconnected");
+    window.setTimeout(() => setToast(""), 2000);
   }
 
   async function copyInvite() {
@@ -200,9 +382,7 @@ export default function App() {
     );
   }
 
-  const canChooseFile =
-    room.isHost ||
-    (!room.hostAssigned && !isGuestInvite());
+  const canManageGoogle = room.isHost;
 
   return (
     <main className="shell">
@@ -243,8 +423,41 @@ export default function App() {
           <div>{room.fileName || "No video selected"}</div>
         </div>
 
-        {canChooseFile && (
-          <DrivePicker onSelected={selectFile} />
+        {canManageGoogle && (
+          <div className="googleActions">
+            {!googleConnection ? (
+              <button
+                className="primary"
+                disabled={!googleReady}
+                onClick={() => void connectGoogleDrive()}
+              >
+                {googleReady
+                  ? "Connect Google Drive"
+                  : "Loading Google Drive..."}
+              </button>
+            ) : (
+              <>
+                <span className="muted">
+                  Google Drive: Connected
+                </span>
+
+                <DrivePicker
+                  disabled={!googleReady}
+                  getAccessToken={getValidGoogleAccessToken}
+                  onSelected={selectFile}
+                />
+
+                <button
+                  disabled={!googleReady}
+                  onClick={() => void disconnectGoogleDrive()}
+                >
+                  {googleReady
+                    ? "Disconnect Google"
+                    : "Loading Google Drive..."}
+                </button>
+              </>
+            )}
+          </div>
         )}
       </section>
 

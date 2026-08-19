@@ -29,8 +29,16 @@ public class RoomController {
     }
 
     @PostMapping("/rooms")
-    public RoomResponse createRoom() {
-        return RoomResponse.from(rooms.create(), null);
+    public RoomResponse createRoom(
+            @RequestParam(required = false) String clientId
+    ) {
+        Room room = rooms.create();
+
+        if (clientId != null && !clientId.isBlank()) {
+            room.claimHost(clientId);
+        }
+
+        return RoomResponse.from(room, clientId);
     }
 
     @GetMapping("/rooms/{roomId}")
@@ -58,7 +66,7 @@ public class RoomController {
         }
 
         return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
-            if (!room.claimHost(request.clientId())) {
+            if (!room.isHost(request.clientId())) {
                 return ResponseEntity.status(403).body(
                         Map.of("error", "Only the room host can change the Drive file")
                 );
@@ -80,6 +88,37 @@ public class RoomController {
 
             return ResponseEntity.ok(
                     RoomResponse.from(room, request.clientId())
+            );
+        }).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/rooms/{roomId}/file")
+    public ResponseEntity<?> clearFile(
+            @PathVariable String roomId,
+            @RequestParam String clientId
+    ) {
+        if (clientId == null || clientId.isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "clientId is required")
+            );
+        }
+
+        return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
+            if (!room.isHost(clientId)) {
+                return ResponseEntity.status(403).body(
+                        Map.of("error", "Only the room host can disconnect Google Drive")
+                );
+            }
+
+            room.clearFile();
+
+            messaging.convertAndSend(
+                    "/topic/room/" + room.getId(),
+                    SyncEvent.fileCleared(room, clientId)
+            );
+
+            return ResponseEntity.ok(
+                    RoomResponse.from(room, clientId)
             );
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }

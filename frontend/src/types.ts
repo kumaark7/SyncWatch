@@ -10,11 +10,18 @@ export type RoomState = {
 };
 
 export type SyncEvent = {
-  type: "STATE" | "PLAY" | "PAUSE" | "SEEK" | "FILE_SELECTED";
+  type:
+    | "STATE"
+    | "PLAY"
+    | "PAUSE"
+    | "SEEK"
+    | "FILE_SELECTED"
+    | "FILE_CLEARED";
   time: number;
   playing: boolean;
   fileName?: string | null;
   serverTime: number;
   senderClientId?: string | null;
   hostClientId?: string | null;
+  seekId?: number | null;
 };

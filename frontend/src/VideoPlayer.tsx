@@ -22,16 +22,28 @@ const IGNORE_DRIFT = 0.25;
 const HARD_SEEK_DRIFT = 1.5;
 const FAST_RATE = 1.03;
 const SLOW_RATE = 0.97;
+const CATCH_UP_RATE = 1.08;
+const MAX_SOFT_CATCH_UP_DRIFT = 8;
 
 type OverlayMode =
   | "none"
   | "host-sync"
   | "guest-sync"
+  | "host-paused"
+  | "guest-paused"
   | "buffering";
 
 export default function VideoPlayer(props: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteUntil = useRef(0);
+  const applyingRemoteRef = useRef(false);
+  const authoritativePlayingRef = useRef(
+    props.initialPlaying
+  );
+  const lastAppliedSeekIdRef = useRef(0);
+  const localPausedSeekRef = useRef(false);
+  const localPausedSeekTimer = useRef<number | null>(null);
+  const remoteApplyTimer = useRef<number | null>(null);
   const rateTimer = useRef<number | null>(null);
   const overlayTimer = useRef<number | null>(null);
 
@@ -41,11 +53,69 @@ export default function VideoPlayer(props: Props) {
   const [overlayMode, setOverlayMode] =
     useState<OverlayMode>("none");
 
+  const hasAlignedPlayback = useRef(false);
+
   const isRemote = () =>
     Date.now() < remoteUntil.current;
 
-  const markRemote = () => {
-    remoteUntil.current = Date.now() + 700;
+  const isApplyingRemote = () =>
+    applyingRemoteRef.current || isRemote();
+
+  const beginRemoteApply = (
+    durationMs = 2000
+  ) => {
+    applyingRemoteRef.current = true;
+    remoteUntil.current = Math.max(
+      remoteUntil.current,
+      Date.now() + durationMs
+    );
+
+    if (remoteApplyTimer.current !== null) {
+      window.clearTimeout(remoteApplyTimer.current);
+    }
+
+    remoteApplyTimer.current = window.setTimeout(() => {
+      applyingRemoteRef.current = false;
+      remoteApplyTimer.current = null;
+    }, durationMs);
+  };
+
+  const enforceAuthoritativePause = (
+    video: HTMLVideoElement
+  ) => {
+    if (
+      authoritativePlayingRef.current ||
+      video.paused ||
+      video.ended
+    ) {
+      return;
+    }
+
+    beginRemoteApply(1000);
+    resetRate(video);
+    video.pause();
+  };
+
+  const clearLocalPausedSeek = () => {
+    if (localPausedSeekTimer.current !== null) {
+      window.clearTimeout(localPausedSeekTimer.current);
+      localPausedSeekTimer.current = null;
+    }
+
+    localPausedSeekRef.current = false;
+  };
+
+  const markLocalPausedSeek = () => {
+    localPausedSeekRef.current = true;
+
+    if (localPausedSeekTimer.current !== null) {
+      window.clearTimeout(localPausedSeekTimer.current);
+    }
+
+    localPausedSeekTimer.current = window.setTimeout(() => {
+      localPausedSeekRef.current = false;
+      localPausedSeekTimer.current = null;
+    }, 1500);
   };
 
   const clearRateTimer = () => {
@@ -130,6 +200,12 @@ export default function VideoPlayer(props: Props) {
 
   useEffect(() => {
     return () => {
+      if (remoteApplyTimer.current !== null) {
+        window.clearTimeout(remoteApplyTimer.current);
+      }
+
+      clearLocalPausedSeek();
+
       clearRateTimer();
       clearOverlayTimer();
     };
@@ -152,7 +228,9 @@ export default function VideoPlayer(props: Props) {
       Boolean(event.senderClientId) &&
       event.senderClientId === props.clientId;
 
-    markRemote();
+    const eventWasFromHost =
+      Boolean(event.hostClientId) &&
+      event.senderClientId === event.hostClientId;
 
     const target = targetTime(event);
     const drift =
@@ -161,19 +239,37 @@ export default function VideoPlayer(props: Props) {
     const absDrift =
       Math.abs(drift);
 
+    if (
+      event.type === "PLAY" ||
+      event.type === "PAUSE" ||
+      event.type === "SEEK" ||
+      event.type === "STATE"
+    ) {
+      authoritativePlayingRef.current =
+        event.playing;
+    }
+
     if (event.type === "SEEK") {
+      if (
+        typeof event.seekId === "number" &&
+        event.seekId < lastAppliedSeekIdRef.current
+      ) {
+        return;
+      }
+
+      if (typeof event.seekId === "number") {
+        lastAppliedSeekIdRef.current = event.seekId;
+      }
+
+      beginRemoteApply(2500);
+
       /*
        * The browser that initiated the seek has already moved
        * its own video. Do not label its echoed event as remote.
        */
       if (!ownEvent) {
-        const seekWasFromHost =
-          Boolean(event.hostClientId) &&
-          event.senderClientId ===
-            event.hostClientId;
-
         showTimedOverlay(
-          seekWasFromHost
+          eventWasFromHost
             ? "host-sync"
             : "guest-sync",
           1100
@@ -194,6 +290,8 @@ export default function VideoPlayer(props: Props) {
         video.currentTime = target;
       }
 
+      hasAlignedPlayback.current = true;
+
       if (event.playing) {
         if (video.paused) {
           void tryRemotePlay(video);
@@ -210,11 +308,19 @@ export default function VideoPlayer(props: Props) {
     }
 
     if (event.type === "PAUSE") {
+      beginRemoteApply(1500);
       resetRate(video);
 
       if (absDrift > 0.15) {
         video.currentTime = target;
       }
+
+      showTimedOverlay(
+        eventWasFromHost
+          ? "host-paused"
+          : "guest-paused",
+        1600
+      );
 
       setNeedsPlaybackStart(false);
 
@@ -226,11 +332,14 @@ export default function VideoPlayer(props: Props) {
     }
 
     if (event.type === "PLAY") {
+      beginRemoteApply(2000);
       resetRate(video);
 
       if (absDrift > 0.5) {
         video.currentTime = target;
       }
+
+      hasAlignedPlayback.current = true;
 
       if (video.paused) {
         void tryRemotePlay(video);
@@ -244,12 +353,14 @@ export default function VideoPlayer(props: Props) {
         resetRate(video);
 
         if (absDrift > IGNORE_DRIFT) {
+          beginRemoteApply(2000);
           video.currentTime = target;
         }
 
         setNeedsPlaybackStart(false);
 
         if (!video.paused) {
+          beginRemoteApply(1500);
           video.pause();
         }
 
@@ -257,6 +368,7 @@ export default function VideoPlayer(props: Props) {
       }
 
       if (video.paused) {
+        beginRemoteApply(2000);
         resetRate(video);
         void tryRemotePlay(video);
         return;
@@ -277,8 +389,20 @@ export default function VideoPlayer(props: Props) {
         return;
       }
 
+      if (
+        drift > 0 &&
+        hasAlignedPlayback.current &&
+        absDrift <= MAX_SOFT_CATCH_UP_DRIFT
+      ) {
+        video.playbackRate = CATCH_UP_RATE;
+        scheduleRateReset(video);
+        return;
+      }
+
       resetRate(video);
+      beginRemoteApply(2500);
       video.currentTime = target;
+      hasAlignedPlayback.current = true;
     }
   }, [
     props.syncEvent,
@@ -287,9 +411,27 @@ export default function VideoPlayer(props: Props) {
   ]);
 
   useEffect(() => {
+    authoritativePlayingRef.current =
+      props.initialPlaying;
+  }, [
+    props.initialPlaying,
+    props.fileName
+  ]);
+
+  useEffect(() => {
     if (!props.hasFile) {
       setNeedsPlaybackStart(false);
       setOverlayMode("none");
+      hasAlignedPlayback.current = false;
+      applyingRemoteRef.current = false;
+      authoritativePlayingRef.current = false;
+      lastAppliedSeekIdRef.current = 0;
+      clearLocalPausedSeek();
+
+      if (remoteApplyTimer.current !== null) {
+        window.clearTimeout(remoteApplyTimer.current);
+        remoteApplyTimer.current = null;
+      }
     }
   }, [
     props.hasFile,
@@ -299,13 +441,16 @@ export default function VideoPlayer(props: Props) {
   if (!props.hasFile) {
     return (
       <div className="videoPlaceholder">
-        Choose a Google Drive video.
+        {props.isHost
+          ? "Choose a Google Drive video."
+          : "Waiting for host to choose a video."}
       </div>
     );
   }
 
   const overlaySrc =
-    overlayMode === "host-sync"
+    overlayMode === "host-sync" ||
+    overlayMode === "host-paused"
       ? "/sync/host-syncing.gif"
       : "/sync/client-syncing.gif";
 
@@ -314,6 +459,10 @@ export default function VideoPlayer(props: Props) {
       ? "Host syncing..."
       : overlayMode === "guest-sync"
       ? "Guest syncing..."
+      : overlayMode === "host-paused"
+      ? "Host paused"
+      : overlayMode === "guest-paused"
+      ? "Guest paused"
       : "Buffering...";
 
   return (
@@ -331,7 +480,7 @@ export default function VideoPlayer(props: Props) {
           const video =
             event.currentTarget;
 
-          markRemote();
+          beginRemoteApply(2000);
           resetRate(video);
 
           if (
@@ -347,17 +496,30 @@ export default function VideoPlayer(props: Props) {
             void tryRemotePlay(
               video
             );
+          } else {
+            enforceAuthoritativePause(video);
           }
         }}
 
         onPlay={(event) => {
-          if (isRemote()) return;
+          if (isApplyingRemote()) return;
+
+          if (localPausedSeekRef.current) {
+            const video =
+              event.currentTarget;
+
+            beginRemoteApply(1200);
+            video.pause();
+            return;
+          }
 
           const video =
             event.currentTarget;
 
           resetRate(video);
           setNeedsPlaybackStart(false);
+          clearLocalPausedSeek();
+          authoritativePlayingRef.current = true;
 
           props.onControl(
             "PLAY",
@@ -368,7 +530,7 @@ export default function VideoPlayer(props: Props) {
 
         onPause={(event) => {
           if (
-            isRemote() ||
+            isApplyingRemote() ||
             event.currentTarget.ended
           ) {
             return;
@@ -378,6 +540,8 @@ export default function VideoPlayer(props: Props) {
             event.currentTarget;
 
           resetRate(video);
+          clearLocalPausedSeek();
+          authoritativePlayingRef.current = false;
 
           props.onControl(
             "PAUSE",
@@ -387,8 +551,12 @@ export default function VideoPlayer(props: Props) {
         }}
 
         onSeeking={() => {
-          if (isRemote()) {
+          if (isApplyingRemote()) {
             return;
+          }
+
+          if (!authoritativePlayingRef.current) {
+            markLocalPausedSeek();
           }
 
           showTimedOverlay(
@@ -400,21 +568,33 @@ export default function VideoPlayer(props: Props) {
         }}
 
         onSeeked={(event) => {
-          if (isRemote()) return;
+          if (isApplyingRemote()) return;
 
           const video =
             event.currentTarget;
 
           resetRate(video);
 
+          const shouldPlay =
+            authoritativePlayingRef.current;
+
           props.onControl(
             "SEEK",
             video.currentTime,
-            !video.paused
+            shouldPlay
           );
+
+          if (!shouldPlay && !video.paused) {
+            beginRemoteApply(1200);
+            video.pause();
+          }
         }}
 
-        onWaiting={() => {
+        onWaiting={(event) => {
+          enforceAuthoritativePause(
+            event.currentTarget
+          );
+
           clearOverlayTimer();
           setOverlayMode(
             "buffering"
@@ -428,7 +608,11 @@ export default function VideoPlayer(props: Props) {
           );
         }}
 
-        onCanPlay={() => {
+        onCanPlay={(event) => {
+          enforceAuthoritativePause(
+            event.currentTarget
+          );
+
           if (
             overlayMode ===
             "buffering"
@@ -439,7 +623,11 @@ export default function VideoPlayer(props: Props) {
           }
         }}
 
-        onPlaying={() => {
+        onPlaying={(event) => {
+          enforceAuthoritativePause(
+            event.currentTarget
+          );
+
           if (
             overlayMode ===
             "buffering"
@@ -448,6 +636,12 @@ export default function VideoPlayer(props: Props) {
               "none"
             );
           }
+        }}
+
+        onTimeUpdate={(event) => {
+          enforceAuthoritativePause(
+            event.currentTarget
+          );
         }}
       />
 
@@ -475,7 +669,7 @@ export default function VideoPlayer(props: Props) {
 
               if (!video) return;
 
-              markRemote();
+              beginRemoteApply(2000);
               resetRate(video);
 
               if (

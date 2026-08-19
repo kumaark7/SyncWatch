@@ -25,11 +25,15 @@ public class SyncController {
     ) {
         Room room = rooms.find(roomId).orElse(null);
 
-        if (room == null || message.type() == null) {
+        if (room == null || message == null || message.type() == null) {
             return;
         }
 
-        String type = message.type().toUpperCase();
+        String type = message.type().trim().toUpperCase();
+
+        if (type.isBlank()) {
+            return;
+        }
 
         if ("JOIN".equals(type)) {
             messaging.convertAndSend(
@@ -45,6 +49,14 @@ public class SyncController {
             return;
         }
 
+        if (message.clientId() == null || message.clientId().isBlank()) {
+            return;
+        }
+
+        if (!Double.isFinite(message.time()) || message.time() < 0) {
+            return;
+        }
+
         boolean playing = switch (type) {
             case "PLAY" -> true;
             case "PAUSE" -> false;
@@ -52,7 +64,11 @@ public class SyncController {
             default -> room.isPlaying();
         };
 
-        room.updatePlayback(message.time(), playing);
+        if ("SEEK".equals(type)) {
+            room.updateSeek(message.time(), playing);
+        } else {
+            room.updatePlayback(message.time(), playing);
+        }
 
         messaging.convertAndSend(
                 "/topic/room/" + room.getId(),

@@ -33,7 +33,8 @@ export function useRoomSocket(roomId: string) {
         setConnected(true);
 
         client.subscribe(`/topic/room/${roomId}`, (message) => {
-          setLastEvent(JSON.parse(message.body) as SyncEvent);
+          const event = JSON.parse(message.body) as SyncEvent;
+          setLastEvent(event);
         });
 
         client.publish({
