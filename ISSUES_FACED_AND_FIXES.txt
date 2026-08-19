@@ -1,0 +1,720 @@
+SyncWatch v0.3 - Issues Faced and How They Were Fixed
+=====================================================
+
+Project: SyncWatch
+Repository: kumaark7/SyncWatch
+Development branch: v0.3-sync
+Local tested milestone: v0.3-local
+VPS production milestone: v0.3-vps
+Production: https://play.projectdarkhope.xyz
+
+PURPOSE
+=======
+This document records the major issues encountered during SyncWatch v0.3
+development, synchronization testing, Google Drive integration, and VPS
+deployment, together with their causes and resolutions.
+
+Security note:
+OAuth access tokens, API keys, and other credentials are intentionally not
+recorded here.
+
+
+1. MAVEN WAS NOT INSTALLED ON WINDOWS
+=====================================
+Symptom:
+'mvn' was not recognized as a command.
+
+Cause:
+Apache Maven was missing or was not available in PATH.
+
+Resolution:
+Installed Maven and configured the Windows PATH.
+
+Verification:
+java -version
+mvn -version
+
+Result:
+The Spring Boot backend could be built and run locally.
+
+
+2. GOOGLE PICKER RETURNED HTTP 401
+==================================
+Symptom:
+Google Picker requests returned HTTP 401 Unauthorized.
+
+Cause:
+Google Cloud credentials/restrictions were incorrect or mismatched during
+development.
+
+Resolution:
+Verified and corrected:
+- Google OAuth Client ID
+- Google API key
+- Google App ID / project number
+- Authorized JavaScript origins
+- Google API availability and restrictions
+
+Result:
+Google Picker loaded successfully.
+
+
+3. GOOGLE PICKER REPORTED "THE API DEVELOPER KEY IS INVALID"
+============================================================
+Symptom:
+Picker displayed:
+"The API developer key is invalid."
+
+Cause:
+The API key supplied to Picker did not match the required Google Cloud
+configuration/restrictions.
+
+Resolution:
+Corrected the API key configuration and verified that Client ID, API key,
+and App ID were not mixed up.
+
+Website restrictions eventually used:
+http://localhost:5173/*
+https://play.projectdarkhope.xyz/*
+
+Result:
+Picker opened and selected Drive videos successfully.
+
+
+4. GOOGLE LOGIN / ACCOUNT SELECTION WAS REQUESTED REPEATEDLY
+============================================================
+Symptom:
+Selecting another Drive video repeatedly triggered Google account selection.
+
+Cause:
+OAuth token acquisition and Picker opening were too tightly coupled.
+
+Resolution:
+Changed the host flow to:
+- Connect Google once.
+- Keep the OAuth access token in frontend memory only.
+- Reuse it while valid.
+- Open Picker again without unnecessary login.
+- Provide Disconnect Google behavior.
+
+Result:
+The host can select additional videos without unnecessary repeated login
+while the token remains valid.
+
+
+5. "GOOGLE APIS ARE STILL LOADING"
+==================================
+Symptom:
+The application could show:
+"Google APIs are still loading. Try again."
+
+Cause:
+Picker actions could occur before both Google Identity Services and GAPI
+Picker initialization were complete.
+
+Resolution:
+Added readiness handling for both GIS and GAPI before enabling the Picker
+flow.
+
+Result:
+Picker controls wait for the required Google APIs.
+
+
+6. BROWSER EXTENSION CONSOLE ERRORS
+===================================
+Examples:
+background_worker.js: The spoc connection is not registered
+Unchecked runtime.lastError: You do not have a background page
+invalid arguments to extensionAdapter.sendMessageToTab
+inlineForm.html related errors
+
+Cause:
+Browser extensions, not SyncWatch.
+
+Resolution:
+Used Incognito/clean browser sessions when necessary and focused debugging on
+SyncWatch requests and application logs.
+
+Result:
+Extension noise was separated from real application failures.
+
+
+7. CROSS-ORIGIN-OPENER-POLICY WARNINGS
+======================================
+Symptom:
+Browser console showed warnings such as:
+Cross-Origin-Opener-Policy policy would block the window.closed call.
+
+Cause:
+Google OAuth popup behavior interacting with browser cross-origin policies.
+
+Resolution:
+Verified the actual OAuth result and network behavior rather than treating
+the warning itself as the primary application failure.
+
+
+8. FAVICON 404 / DUPLICATE FAVICON
+==================================
+Symptom:
+favicon.ico initially returned 404.
+
+Resolution:
+Added the favicon to the frontend build.
+
+A duplicate favicon_.ico was later removed from the production dist output.
+
+
+9. GOOGLE PICKER SHOWED VIDEOS BUT NOT FOLDER NAVIGATION
+========================================================
+Symptom:
+Picker displayed matching video files but did not provide the desired folder
+navigation experience.
+
+Cause:
+The DocsView configuration filtered video MIME types without the required
+folder-navigation behavior.
+
+Resolution:
+Configured Picker to include folders for navigation while keeping folders
+non-selectable and retaining the video MIME restrictions.
+
+Result:
+Users can navigate through Drive folders while selecting video files.
+
+
+10. MKV SUPPORT
+===============
+Observation:
+MKV/video/x-matroska can be allowed by Picker, but successful playback is
+still dependent on browser/container/codec support.
+
+Resolution:
+MKV can remain selectable, but MP4 using H.264 video and AAC audio remains
+the safest browser-compatible format.
+
+No transcoding was added in v0.3.
+
+
+11. DIFFERENT HOST/GUEST BUFFERING BEHAVIOR
+===========================================
+Observation:
+The host and guest could buffer different amounts of the same video.
+
+Cause:
+HTML5 media buffering and HTTP Range fetching are browser/network controlled.
+The preload attribute is a hint and does not force the browser to download
+the complete video.
+
+Resolution:
+Retained Range-based original-quality streaming and focused on synchronization
+instead of forcing full-file downloads.
+
+
+12. HOST/GUEST DESYNCHRONIZATION AFTER SEEK
+===========================================
+Symptom:
+After seeking, host and guest could become several seconds apart.
+
+Investigation:
+Debugging was added around WebSocket SEND/RECEIVE, SEEK application, and
+authoritative server state.
+
+Finding:
+SEEK messages were reaching the clients.
+
+Root cause:
+Remote programmatic operations such as:
+video.currentTime = target
+video.pause()
+video.play()
+
+triggered native HTML media events. Those events could then be interpreted as
+new local user commands and sent back to the server, creating a feedback loop.
+
+Resolution:
+Implemented suppression for remote-applied media events.
+
+Result:
+Programmatic synchronization operations no longer echo back as new user
+commands.
+
+
+13. RAPID / LONG SEEK ORDERING
+==============================
+Symptom:
+Older seek operations could interfere with newer seeks.
+
+Cause:
+There was insufficient ordering protection between successive SEEK commands.
+
+Resolution:
+Added seekId ordering:
+- Newer seekId wins.
+- Older/stale seeks are ignored.
+- Explicit remote SEEK hard-applies the authoritative target.
+
+Result:
+Rapid seek protocol testing passed.
+
+
+14. EXPLICIT SEEK AND PERIODIC DRIFT CORRECTION NEEDED DIFFERENT POLICIES
+=========================================================================
+Problem:
+Explicit user SEEK commands and routine periodic STATE synchronization should
+not use identical correction behavior.
+
+Resolution:
+Explicit SEEK:
+Hard-apply the authoritative target.
+
+Periodic STATE:
+Use smooth drift correction.
+
+v0.3 drift strategy:
+<= 250 ms       -> ignore
+250 ms to 1.5 s -> temporary playbackRate correction
+> 1.5 s         -> hard seek
+
+Result:
+Routine synchronization remains smooth while explicit seeks apply promptly.
+
+
+15. AUTOPLAY BLOCKED ON GUEST
+=============================
+Symptom:
+Browser could reject programmatic video.play() because no user gesture had
+occurred.
+
+Cause:
+Modern browser autoplay policy.
+
+Resolution:
+Added an autoplay-blocked / user-gesture recovery path without changing the
+authoritative server playback state.
+
+Result:
+The guest can recover playback without incorrectly pausing the room.
+
+
+16. HOST / GUEST AUTHORITY
+==========================
+Problem:
+Frontend-only guest restrictions were insufficient for Drive file authority.
+
+Resolution:
+Made server hostClientId authoritative.
+
+Policy for v0.3:
+- Host can select/change/clear the Drive file.
+- Guests cannot change the Drive file.
+- Unauthorized guest file changes are rejected.
+- PLAY, PAUSE, and SEEK remain collaborative controls.
+
+Result:
+File authority is enforced server-side while collaborative playback remains.
+
+
+17. JOIN-IN-PROGRESS
+====================
+Problem:
+A guest joining after playback started needed the current authoritative room
+state.
+
+Resolution:
+The server sends authoritative state on JOIN and the client aligns itself.
+
+Result:
+Late guests joined at the appropriate room playback position/state during
+testing.
+
+
+18. SERVER-SIDE VALIDATION
+==========================
+Concern:
+Validation should reject malformed traffic without changing valid
+synchronization behavior.
+
+Resolution:
+Kept the valid synchronization path intact while adding defensive checks such
+as:
+- Room existence
+- Supported message type
+- Required clientId
+- Finite playback time
+- Non-negative playback time
+- Host authority for Drive file changes
+
+Result:
+Valid collaborative PLAY/PAUSE/SEEK behavior remains unchanged.
+
+
+19. SYNCHRONIZATION DRIFT TESTING
+================================
+Observed testing showed host and guest remaining at a relatively stable small
+difference instead of continuously diverging.
+
+Both clients also reported healthy media state during testing, including:
+paused: false
+seeking: false
+playbackRate: 1.00
+readyState: 4
+
+Result:
+Core continuous playback synchronization was considered suitable for the
+v0.3 milestone.
+
+
+20. README / VERSION MILESTONE
+==============================
+Problem:
+The v0.3 work lived on v0.3-sync while older repository/default-branch content
+could still show the previous project state.
+
+Resolution:
+Updated the README on v0.3-sync and created:
+
+v0.3-local
+
+as the frozen local-tested milestone.
+
+Result:
+A known-good local v0.3 state was preserved before final VPS deployment work.
+
+
+21. JAVA WAS NOT AVAILABLE ON ORACLE VPS
+========================================
+Environment:
+Oracle VM.Standard.A1.Flex
+Ubuntu 24.04
+ARM64 / aarch64
+
+Symptom:
+java and javac were unavailable.
+
+Resolution:
+Installed OpenJDK 21 and Maven.
+
+Verification:
+java -version
+javac -version
+mvn -version
+
+Result:
+The Spring Boot application built and ran successfully on ARM64.
+
+
+22. ORACLE/UBUNTU REGIONAL APT MIRROR DID NOT RESOLVE
+=====================================================
+Symptom:
+apt update reported:
+Could not resolve 'ap-hyderabad-1-ad-1.clouds.ports.ubuntu.com'
+
+Cause:
+The configured regional Ubuntu mirror hostname was not resolving.
+
+Resolution:
+Changed /etc/apt/sources.list.d/ubuntu.sources to use:
+
+http://ports.ubuntu.com/ubuntu-ports/
+
+for the Ubuntu repositories.
+
+Result:
+apt update and package installation worked normally.
+
+
+23. NODE.JS WAS NOT INSTALLED ON VPS
+====================================
+Symptom:
+node and npm were unavailable.
+
+Resolution:
+Installed a Node.js environment suitable for the Vite frontend and built the
+production frontend.
+
+Result:
+frontend/dist was generated successfully.
+
+
+24. NGINX RETURNED HTTP 500
+===========================
+Symptom:
+curl -I http://127.0.0.1 returned:
+HTTP/1.1 500 Internal Server Error
+
+Cause:
+Serving the frontend directly from the /home/ubuntu project directory caused
+filesystem access/traversal problems for the Nginx worker.
+
+Resolution:
+Copied the production frontend to:
+
+/var/www/syncwatch
+
+and configured Nginx to serve that directory.
+
+Result:
+Local Nginx request returned HTTP 200.
+
+
+25. BACKEND NEEDED TO RUN PERSISTENTLY
+======================================
+Problem:
+A manually started Java process would not provide a proper persistent
+production service.
+
+Resolution:
+Created:
+
+syncwatch.service
+
+under systemd and configured it to run the v0.3 Spring Boot JAR with restart
+behavior and boot startup.
+
+Result:
+The backend runs persistently and starts automatically.
+
+
+26. DOMAIN RESOLVED BUT PUBLIC PORT 80 WAS UNREACHABLE
+======================================================
+Symptom:
+play.projectdarkhope.xyz resolved to the VPS public IP, but external HTTP
+connections timed out.
+
+Investigation:
+- Nginx was active.
+- Nginx listened on 0.0.0.0:80.
+- Local Nginx requests worked.
+- OCI ingress rules for 80/443 were added.
+
+Root cause:
+The instance iptables INPUT chain allowed SSH on port 22 and then rejected
+other new inbound traffic.
+
+Resolution:
+Inserted ACCEPT rules before the final REJECT for:
+TCP 80
+TCP 443
+
+Result:
+HTTP/HTTPS became externally reachable.
+
+
+27. CERTBOT / LET'S ENCRYPT VALIDATION FAILED
+=============================================
+Symptom:
+Certbot could not validate:
+play.projectdarkhope.xyz
+
+The HTTP-01 challenge could not be fetched.
+
+Cause:
+Public port 80 was blocked by the instance firewall.
+
+Resolution:
+Allowed ports 80 and 443 in:
+- Oracle Cloud ingress
+- Instance iptables
+
+Then reran Certbot.
+
+Result:
+HTTPS certificate issuance succeeded.
+
+
+28. PRODUCTION CREATE ROOM RETURNED HTTP 403
+============================================
+Symptom:
+POST https://play.projectdarkhope.xyz/api/rooms?clientId=...
+returned:
+403 Forbidden
+
+Diagnostic test:
+POST directly to Spring without an Origin header -> HTTP 200
+POST with Origin: https://play.projectdarkhope.xyz -> HTTP 403
+
+Response:
+Invalid CORS request
+
+Root cause:
+Backend frontend-origin configuration still allowed:
+http://localhost:5173
+
+while production used:
+https://play.projectdarkhope.xyz
+
+Resolution:
+Configured the systemd service environment with:
+
+SYNCWATCH_FRONTEND_ORIGIN=https://play.projectdarkhope.xyz
+
+The existing Spring WebConfig uses the corresponding
+syncwatch.frontend-origin property for API CORS.
+
+Verification:
+The same Origin request returned:
+HTTP/1.1 200
+Access-Control-Allow-Origin: https://play.projectdarkhope.xyz
+
+Result:
+Production room creation worked.
+
+
+29. PRODUCTION WSS / STOMP CONNECTION FAILED
+============================================
+Symptom:
+wss://play.projectdarkhope.xyz/ws initially failed.
+
+Cause:
+WebSocketConfig used the same frontend-origin setting, which was still
+localhost-oriented before the production environment configuration.
+
+Resolution:
+Set:
+
+SYNCWATCH_FRONTEND_ORIGIN=https://play.projectdarkhope.xyz
+
+and restarted syncwatch.service.
+
+Result:
+Browser DevTools showed:
+Status Code: 101 Switching Protocols
+Sec-WebSocket-Protocol: v12.stomp
+
+The Spring WebSocket broker also reported successful CONNECT/CONNECTED
+processing without abnormal closes during verification.
+
+
+30. GOOGLE PRODUCTION OAUTH / API KEY RESTRICTIONS
+==================================================
+OAuth Authorized JavaScript origins:
+http://localhost:5173
+https://play.projectdarkhope.xyz
+
+API key website restrictions:
+http://localhost:5173/*
+https://play.projectdarkhope.xyz/*
+
+API access restricted to:
+Google Drive API
+Google Picker API
+
+Result:
+Local development remains supported while the production domain is explicitly
+authorized.
+
+
+31. FIREWALL RULES NEEDED TO SURVIVE REBOOT
+===========================================
+Problem:
+Manually inserted iptables rules could disappear after reboot.
+
+Resolution:
+Installed/configured iptables-persistent and saved the active rules using:
+
+sudo netfilter-persistent save
+
+Result:
+The firewall configuration was persisted.
+
+
+32. CERTIFICATE RENEWAL VERIFICATION
+====================================
+Command:
+sudo certbot renew --dry-run
+
+Result:
+The simulated renewal completed successfully for the production certificate.
+
+
+33. SYSTEMD BOOT VERIFICATION
+=============================
+Checks:
+sudo systemctl is-enabled nginx
+sudo systemctl is-enabled syncwatch
+
+Result:
+Both services were enabled.
+
+syncwatch.service was active and running the expected v0.3 Spring Boot JAR.
+
+
+34. EXTERNAL PRODUCTION HEALTH CHECK
+====================================
+From Windows:
+
+curl https://play.projectdarkhope.xyz/api/health
+
+Result:
+{"backend":"java-spring-boot","version":"0.3","ok":true}
+
+This confirmed the complete external path:
+
+DNS
+-> HTTPS
+-> Nginx
+-> /api reverse proxy
+-> Spring Boot
+
+
+CURRENT v0.3 DEPLOYMENT
+=======================
+
+Frontend:
+React + TypeScript + Vite
+Production static root: /var/www/syncwatch
+
+Backend:
+Java 21 + Spring Boot
+systemd service: syncwatch.service
+Internal port: 8080
+
+Public domain:
+https://play.projectdarkhope.xyz
+
+Nginx:
+/      -> React frontend
+/api/  -> Spring Boot REST
+/ws    -> Spring WebSocket/STOMP
+
+HTTPS:
+Let's Encrypt + Certbot
+Renewal dry-run passed
+
+Firewall:
+OCI ingress allows TCP 80/443
+Instance iptables allows TCP 80/443 before final reject
+Rules persisted with netfilter-persistent
+
+Google:
+Localhost + production OAuth origins configured
+API key restricted to approved websites
+Google Drive API + Google Picker API selected
+
+
+VERSION MILESTONES
+==================
+
+v0.3-local
+Local tested v0.3 milestone.
+
+v0.3-vps
+VPS deployed/production-tested v0.3 milestone.
+
+
+DEFERRED BEYOND v0.3
+====================
+
+- Complete reconnect/rejoin/resync recovery
+- Additional buffering UX testing/polish
+- Seek overlay UI polish
+- Room lifecycle cleanup / TTL
+- Room passwords
+- Persistent room database
+- HLS support
+- Arbitrary HTTP media source support
+- YouTube/provider modes
+- Shared virtual browser / Neko/WebRTC
+
+
+END OF SYNCWATCH v0.3 ISSUE LOG

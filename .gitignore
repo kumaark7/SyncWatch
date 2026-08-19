@@ -6,3 +6,7 @@ frontend/.env
 *.log
 .idea/
 .vscode/
+
+# Local production/build files
+frontend/.env.production
+frontend/tsconfig.tsbuildinfo
