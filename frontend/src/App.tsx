@@ -7,7 +7,9 @@ import type { RoomState } from "./types";
 import "./style.css";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_SCOPE =
+  "https://www.googleapis.com/auth/drive.file";
+
 const TOKEN_EXPIRY_SKEW_MS = 60000;
 
 type GoogleConnection = {
@@ -15,76 +17,20 @@ type GoogleConnection = {
   expiresAt: number;
 };
 
-/*
- * Get the room ID from the browser URL.
- *
- * Example:
- *
- * http://localhost:5173/room/ABC123
- *
- * returns:
- *
- * ABC123
- */
 function roomFromUrl() {
   const match =
-    window.location.pathname.match(/^\/room\/([A-Z0-9]+)/i);
+    window.location.pathname.match(
+      /^\/room\/([A-Z0-9]+)/i
+    );
 
   return match?.[1]?.toUpperCase() || "";
 }
 
-/*
- * Google APIs are loaded asynchronously from index.html.
- *
- * So we check whether both Google Identity Services
- * and Google API are ready.
- */
 function googleApisReady() {
   return Boolean(
     window.google?.accounts?.oauth2 &&
       window.gapi
   );
-}
-
-/*
- * Get a client ID that survives page refresh.
- *
- * sessionStorage:
- *
- * - survives refresh
- * - survives navigation within the same tab
- * - disappears when the tab is closed
- *
- * This is exactly what we want for SyncWatch v0.3.
- */
-function getClientId() {
-  const STORAGE_KEY = "syncwatch.clientId";
-
-  let clientId =
-    sessionStorage.getItem(STORAGE_KEY);
-
-  if (!clientId) {
-    if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
-    ) {
-      clientId = crypto.randomUUID();
-    } else {
-      clientId =
-        Date.now().toString(36) +
-        "-" +
-        Math.random()
-          .toString(36)
-          .slice(2);
-    }
-
-    sessionStorage.setItem(
-      STORAGE_KEY,
-      clientId
-    );
-  }
-
-  return clientId;
 }
 
 export default function App() {
@@ -101,10 +47,10 @@ export default function App() {
     useState("");
 
   /*
-   * This stores the Google access token only
-   * in React memory.
+   * Temporary Google OAuth connection.
    *
-   * It is NOT stored in localStorage/sessionStorage.
+   * This is intentionally kept only in React memory.
+   * It disappears after page refresh.
    */
   const [googleConnection, setGoogleConnection] =
     useState<GoogleConnection | null>(null);
@@ -120,16 +66,21 @@ export default function App() {
   } = useRoomSocket(roomId);
 
   /*
-   * Wait for Google APIs to finish loading.
+   * Wait for Google APIs to load.
    */
   useEffect(() => {
-    if (googleReady) return;
+    if (googleReady) {
+      return;
+    }
 
     const timer =
       window.setInterval(() => {
         if (googleApisReady()) {
           setGoogleReady(true);
-          window.clearInterval(timer);
+
+          window.clearInterval(
+            timer
+          );
         }
       }, 250);
 
@@ -138,11 +89,16 @@ export default function App() {
   }, [googleReady]);
 
   /*
-   * When roomId changes, ask Spring Boot
-   * for the current room state.
+   * Load room information from Spring Boot.
+   *
+   * This is also what restores the host role
+   * after refreshing the page, because clientId
+   * is preserved by useRoomSocket().
    */
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) {
+      return;
+    }
 
     fetch(
       `${API_URL}/api/rooms/${roomId}?clientId=${encodeURIComponent(
@@ -151,23 +107,33 @@ export default function App() {
     )
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error("Room not found");
+          throw new Error(
+            "Room not found"
+          );
         }
 
         return response.json();
       })
-      .then(setRoom)
-      .catch(() => setRoom(null));
+      .then((data) => {
+        setRoom(data);
+      })
+      .catch(() => {
+        setRoom(null);
+      });
   }, [roomId, clientId]);
 
   /*
-   * Process events received through WebSocket.
+   * Process WebSocket events.
    */
   useEffect(() => {
-    if (!lastEvent) return;
+    if (!lastEvent) {
+      return;
+    }
 
     setRoom((previous) => {
-      if (!previous) return previous;
+      if (!previous) {
+        return previous;
+      }
 
       const eventHost =
         lastEvent.hostClientId;
@@ -177,7 +143,7 @@ export default function App() {
         eventHost === clientId;
 
       /*
-       * Host selected a new Drive file.
+       * Host selected a file.
        */
       if (
         lastEvent.type ===
@@ -185,21 +151,28 @@ export default function App() {
       ) {
         return {
           ...previous,
+
           hasFile: true,
+
           fileName:
             lastEvent.fileName ??
             "Google Drive video",
+
           playing: false,
+
           currentTime: 0,
+
           serverTime:
             lastEvent.serverTime,
+
           hostAssigned: true,
+
           isHost
         };
       }
 
       /*
-       * Host disconnected the Drive file.
+       * Host cleared the file.
        */
       if (
         lastEvent.type ===
@@ -207,15 +180,22 @@ export default function App() {
       ) {
         return {
           ...previous,
+
           hasFile: false,
+
           fileName: null,
+
           playing: false,
+
           currentTime: 0,
+
           serverTime:
             lastEvent.serverTime,
+
           hostAssigned:
             Boolean(eventHost) ||
             previous.hostAssigned,
+
           isHost: eventHost
             ? isHost
             : previous.isHost
@@ -227,13 +207,20 @@ export default function App() {
        */
       return {
         ...previous,
-        playing: lastEvent.playing,
-        currentTime: lastEvent.time,
+
+        playing:
+          lastEvent.playing,
+
+        currentTime:
+          lastEvent.time,
+
         serverTime:
           lastEvent.serverTime,
+
         hostAssigned:
           Boolean(eventHost) ||
           previous.hostAssigned,
+
         isHost: eventHost
           ? isHost
           : previous.isHost
@@ -242,11 +229,14 @@ export default function App() {
   }, [lastEvent, clientId]);
 
   /*
-   * Guests should never retain Google Drive
-   * connection state.
+   * If this browser becomes a guest,
+   * remove its local Google connection.
    */
   useEffect(() => {
-    if (room && !room.isHost) {
+    if (
+      room &&
+      !room.isHost
+    ) {
       setGoogleConnection(null);
     }
   }, [room]);
@@ -266,7 +256,10 @@ export default function App() {
       );
 
     if (!response.ok) {
-      alert("Could not create room.");
+      alert(
+        "Could not create room."
+      );
+
       return;
     }
 
@@ -279,7 +272,10 @@ export default function App() {
       `/room/${data.roomId}`
     );
 
-    setRoomId(data.roomId);
+    setRoomId(
+      data.roomId
+    );
+
     setRoom(data);
   }
 
@@ -288,9 +284,13 @@ export default function App() {
    */
   async function joinRoom() {
     const code =
-      joinCode.trim().toUpperCase();
+      joinCode
+        .trim()
+        .toUpperCase();
 
-    if (!code) return;
+    if (!code) {
+      return;
+    }
 
     const response =
       await fetch(
@@ -300,7 +300,10 @@ export default function App() {
       );
 
     if (!response.ok) {
-      alert("Room not found.");
+      alert(
+        "Room not found."
+      );
+
       return;
     }
 
@@ -314,19 +317,12 @@ export default function App() {
     );
 
     setRoomId(code);
+
     setRoom(data);
   }
 
   /*
-   * Request a Google OAuth access token.
-   *
-   * prompt = "consent"
-   *      → explicitly show authorization/consent
-   *
-   * prompt = ""
-   *      → normal token request
-   *
-   * We are intentionally NOT using prompt="none".
+   * Request a Google Drive access token.
    */
   function requestGoogleAccessToken(
     prompt = ""
@@ -339,6 +335,7 @@ export default function App() {
           );
 
           resolve(null);
+
           return;
         }
 
@@ -347,15 +344,18 @@ export default function App() {
           !window.google?.accounts?.oauth2
         ) {
           resolve(null);
+
           return;
         }
 
         const tokenClient =
           window.google.accounts.oauth2.initTokenClient(
             {
-              client_id: CLIENT_ID,
+              client_id:
+                CLIENT_ID,
 
-              scope: DRIVE_SCOPE,
+              scope:
+                DRIVE_SCOPE,
 
               callback: (
                 tokenResponse: any
@@ -375,6 +375,7 @@ export default function App() {
                   );
 
                   resolve(null);
+
                   return;
                 }
 
@@ -416,13 +417,19 @@ export default function App() {
   }
 
   /*
-   * FIRST Google Drive connection.
+   * CONNECT GOOGLE DRIVE
    *
-   * This explicitly asks for consent.
+   * This is the only way to establish
+   * a Google Drive connection.
    */
   async function connectGoogleDrive() {
-    if (!googleReady) return;
+    if (!googleReady) {
+      return;
+    }
 
+    /*
+     * Already connected?
+     */
     if (
       googleConnection &&
       googleConnection.expiresAt >
@@ -440,14 +447,21 @@ export default function App() {
       return;
     }
 
+    /*
+     * Explicit Google authorization.
+     */
     const connection =
       await requestGoogleAccessToken(
         "consent"
       );
 
-    if (!connection) return;
+    if (!connection) {
+      return;
+    }
 
-    setGoogleConnection(connection);
+    setGoogleConnection(
+      connection
+    );
 
     setToast(
       "Google Drive connected"
@@ -460,46 +474,52 @@ export default function App() {
   }
 
   /*
-   * Get a valid Google access token.
+   * Get a valid Google Drive token.
    *
-   * If we already have one in memory and it
-   * hasn't expired, reuse it.
-   *
-   * After refresh googleConnection is null,
-   * so a new short-lived token is requested.
+   * If the token expired or disappeared
+   * after refresh, request a new one.
    */
   async function getValidGoogleAccessToken() {
-    if (!googleReady) return null;
+    if (!googleReady) {
+      return null;
+    }
 
+    /*
+     * Existing valid token.
+     */
     if (
       googleConnection &&
       googleConnection.expiresAt >
         Date.now()
     ) {
-      return googleConnection.accessToken;
+      return (
+        googleConnection.accessToken
+      );
     }
 
     /*
-     * IMPORTANT:
+     * No valid connection.
      *
-     * We intentionally use the normal empty
-     * prompt instead of prompt="none".
+     * We deliberately do NOT automatically
+     * reconnect here.
      *
-     * This avoids the popup_failed_to_open
-     * problem we just encountered.
+     * The user must press
+     * "Connect Google Drive".
      */
-    const connection =
-      await requestGoogleAccessToken();
+    setToast(
+      "Please connect Google Drive first."
+    );
 
-    if (!connection) return null;
+    window.setTimeout(
+      () => setToast(""),
+      2500
+    );
 
-    setGoogleConnection(connection);
-
-    return connection.accessToken;
+    return null;
   }
 
   /*
-   * Send selected Drive file to Spring Boot.
+   * SELECT DRIVE FILE
    */
   async function selectFile(file: {
     id: string;
@@ -518,10 +538,15 @@ export default function App() {
           },
 
           body: JSON.stringify({
-            fileId: file.id,
-            fileName: file.name,
+            fileId:
+              file.id,
+
+            fileName:
+              file.name,
+
             accessToken:
               file.accessToken,
+
             clientId
           })
         }
@@ -548,16 +573,31 @@ export default function App() {
   }
 
   /*
-   * Disconnect Google Drive.
+   * DISCONNECT GOOGLE DRIVE
+   *
+   * This does TWO things:
+   *
+   * 1. Revoke the temporary Google token.
+   * 2. Tell Spring Boot to clear the room's
+   *    Drive file.
+   *
+   * After this finishes, the UI returns to:
+   *
+   *     Connect Google Drive
    */
   async function disconnectGoogleDrive() {
     const token =
       googleConnection?.accessToken;
 
-    setGoogleConnection(null);
+    /*
+     * Immediately remove local connection state.
+     */
+    setGoogleConnection(
+      null
+    );
 
     /*
-     * Tell Google to revoke the temporary token.
+     * Revoke the Google access token.
      */
     if (
       token &&
@@ -571,9 +611,8 @@ export default function App() {
     }
 
     /*
-     * If this browser is the host,
-     * also remove the selected file
-     * from the SyncWatch room.
+     * Only the host can clear the
+     * Drive file from the room.
      */
     if (room?.isHost) {
       const response =
@@ -597,6 +636,13 @@ export default function App() {
             "Could not disconnect Google Drive."
         );
 
+        /*
+         * We failed to disconnect
+         * from the server.
+         *
+         * Keep the local state disconnected,
+         * but report the server error.
+         */
         return;
       }
 
@@ -617,7 +663,7 @@ export default function App() {
   }
 
   /*
-   * Create the guest invitation URL.
+   * COPY INVITE
    */
   async function copyInvite() {
     const inviteUrl =
@@ -649,7 +695,10 @@ export default function App() {
   if (!roomId) {
     return (
       <main className="shell home">
-        <h1>SyncWatch</h1>
+
+        <h1>
+          SyncWatch
+        </h1>
 
         <p>
           Java full-stack Google Drive
@@ -664,6 +713,7 @@ export default function App() {
         </button>
 
         <div className="join">
+
           <input
             value={joinCode}
             onChange={(event) =>
@@ -673,7 +723,8 @@ export default function App() {
             }
             onKeyDown={(event) => {
               if (
-                event.key === "Enter"
+                event.key ===
+                "Enter"
               ) {
                 void joinRoom();
               }
@@ -689,18 +740,24 @@ export default function App() {
           >
             Join
           </button>
+
         </div>
+
       </main>
     );
   }
 
   /*
-   * ROOM DOES NOT EXIST
+   * ROOM NOT FOUND
    */
   if (!room) {
     return (
       <main className="shell home">
-        <h1>Room not found</h1>
+
+        <h1>
+          Room not found
+        </h1>
+
       </main>
     );
   }
@@ -715,8 +772,11 @@ export default function App() {
     <main className="shell">
 
       {/* HEADER */}
+
       <header>
+
         <div>
+
           <strong>
             SyncWatch
           </strong>
@@ -739,6 +799,7 @@ export default function App() {
               ? "● Synced"
               : "● Reconnecting"}
           </span>
+
         </div>
 
         <button
@@ -748,29 +809,53 @@ export default function App() {
         >
           Copy invite
         </button>
+
       </header>
 
       {/* VIDEO PLAYER */}
+
       <VideoPlayer
         roomId={roomId}
-        hasFile={room.hasFile}
-        fileName={room.fileName}
+
+        hasFile={
+          room.hasFile
+        }
+
+        fileName={
+          room.fileName
+        }
+
         initialTime={
           room.currentTime
         }
+
         initialPlaying={
           room.playing
         }
-        syncEvent={lastEvent}
-        onControl={sendControl}
-        clientId={clientId}
-        isHost={room.isHost}
+
+        syncEvent={
+          lastEvent
+        }
+
+        onControl={
+          sendControl
+        }
+
+        clientId={
+          clientId
+        }
+
+        isHost={
+          room.isHost
+        }
       />
 
       {/* BOTTOM SECTION */}
+
       <section className="bottom">
 
         <div>
+
           <div className="muted">
             Now playing
           </div>
@@ -779,26 +864,35 @@ export default function App() {
             {room.fileName ||
               "No video selected"}
           </div>
+
         </div>
 
         {canManageGoogle && (
+
           <div className="googleActions">
 
             {/*
-             * IMPORTANT UI LOGIC
+             * STATE 1:
              *
-             * Show Connect Google Drive
-             * ONLY when:
+             * No active Google connection.
              *
-             * 1. no file exists
-             * AND
-             * 2. Google is not currently connected
-             */}
-            {!room.hasFile &&
+             * Show ONLY:
+             *
+             * Connect Google Drive
+             *
+             * This happens:
+             *
+             * - initially
+             * - after refresh
+             * - after disconnect
+             */
             !googleConnection ? (
+
               <button
                 className="primary"
-                disabled={!googleReady}
+                disabled={
+                  !googleReady
+                }
                 onClick={() =>
                   void connectGoogleDrive()
                 }
@@ -807,36 +901,37 @@ export default function App() {
                   ? "Connect Google Drive"
                   : "Loading Google Drive..."}
               </button>
-            ) : (
-              <>
-                {googleConnection && (
-                  <span className="muted">
-                    Google Drive:
-                    {" "}
-                    Connected
-                  </span>
-                )}
 
-                {/*
-                 * Choose a Drive video.
-                 *
-                 * This works whether:
-                 *
-                 * - a video already exists
-                 * - or we connected Google but
-                 *   haven't selected a video yet
-                 *
-                 * After refresh, googleConnection
-                 * is null, but room.hasFile is true,
-                 * so this button still appears.
-                 */}
+            ) : (
+
+              /*
+               * STATE 2:
+               *
+               * Google connection exists.
+               *
+               * Show:
+               *
+               * Connected
+               * Choose Video
+               * Disconnect
+               */
+              <>
+
+                <span className="muted">
+                  Google Drive:
+                  {" "}
+                  Connected
+                </span>
+
                 <DrivePicker
                   disabled={
                     !googleReady
                   }
+
                   getAccessToken={
                     getValidGoogleAccessToken
                   }
+
                   onSelected={
                     selectFile
                   }
@@ -854,14 +949,21 @@ export default function App() {
                     ? "Disconnect Google"
                     : "Loading Google Drive..."}
                 </button>
+
               </>
+
             )}
+
           </div>
+
         )}
+
       </section>
 
       {/* TOAST */}
+
       {toast && (
+
         <div
           className="toast"
           role="status"
@@ -869,7 +971,9 @@ export default function App() {
         >
           {toast}
         </div>
+
       )}
+
     </main>
   );
 }
