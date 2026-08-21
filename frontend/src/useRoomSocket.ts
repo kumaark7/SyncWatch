@@ -13,9 +13,20 @@ function makeClientId() {
   return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
 }
 
+function getClientId() {
+  const existing = sessionStorage.getItem("syncwatch-client-id");
+  if (existing) 
+  {
+    return existing;
+  }
+  const id = makeClientId();
+  sessionStorage.setItem("syncwatch-client-id",id);
+  return id;
+}
+
 export function useRoomSocket(roomId: string) {
   const clientRef = useRef<Client | null>(null);
-  const clientIdRef = useRef(makeClientId());
+  const clientIdRef = useRef(getClientId());
 
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<SyncEvent | null>(null);
