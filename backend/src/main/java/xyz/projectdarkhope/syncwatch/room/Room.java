@@ -1,5 +1,12 @@
 package xyz.projectdarkhope.syncwatch.room;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 public class Room {
     private final String id;
     private volatile String fileId;
@@ -10,6 +17,8 @@ public class Room {
     private volatile double currentTime;
     private volatile long updatedAt;
     private volatile long seekVersion;
+    private final Map<String, String> participantNames = new HashMap<>();
+    private final Map<String, Set<String>> sessionsByClientId = new HashMap<>();
 
     public Room(String id) {
         this.id = id;
@@ -68,5 +77,52 @@ public class Room {
     public synchronized double getCurrentTime() {
         if (!playing) return currentTime;
         return currentTime + (System.currentTimeMillis() - updatedAt) / 1000.0;
+    }
+
+    public synchronized boolean registerParticipant(
+            String clientId,
+            String nameTag,
+            String sessionId
+    ) {
+        if (clientId == null || clientId.isBlank()
+                || nameTag == null || nameTag.isBlank()
+                || sessionId == null || sessionId.isBlank()) {
+            return false;
+        }
+
+        participantNames.put(clientId, nameTag.trim());
+        sessionsByClientId
+                .computeIfAbsent(clientId, ignored -> new HashSet<>())
+                .add(sessionId);
+        return true;
+    }
+
+    public synchronized boolean removeSession(String sessionId) {
+        boolean changed = false;
+
+        for (var entry : new ArrayList<>(sessionsByClientId.entrySet())) {
+            if (!entry.getValue().remove(sessionId)) {
+                continue;
+            }
+
+            changed = true;
+            if (entry.getValue().isEmpty()) {
+                sessionsByClientId.remove(entry.getKey());
+                participantNames.remove(entry.getKey());
+            }
+        }
+
+        return changed;
+    }
+
+    public synchronized List<RoomParticipant> getParticipants() {
+        return participantNames.entrySet().stream()
+                .sorted(Map.Entry.comparingByValue(String.CASE_INSENSITIVE_ORDER))
+                .map(entry -> new RoomParticipant(
+                        entry.getKey(),
+                        entry.getValue(),
+                        isHost(entry.getKey())
+                ))
+                .toList();
     }
 }

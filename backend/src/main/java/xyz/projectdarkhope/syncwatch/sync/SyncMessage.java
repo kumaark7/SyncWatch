@@ -4,5 +4,6 @@ public record SyncMessage(
         String type,
         double time,
         boolean playing,
-        String clientId
+        String clientId,
+        String nameTag
 ) {}

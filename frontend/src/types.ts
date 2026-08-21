@@ -16,7 +16,8 @@ export type SyncEvent = {
     | "PAUSE"
     | "SEEK"
     | "FILE_SELECTED"
-    | "FILE_CLEARED";
+    | "FILE_CLEARED"
+    | "PARTICIPANTS";
   time: number;
   playing: boolean;
   fileName?: string | null;
@@ -24,4 +25,11 @@ export type SyncEvent = {
   senderClientId?: string | null;
   hostClientId?: string | null;
   seekId?: number | null;
+  participants?: Participant[] | null;
+};
+
+export type Participant = {
+  clientId: string;
+  nameTag: string;
+  host: boolean;
 };

@@ -24,7 +24,7 @@ function getClientId() {
   return id;
 }
 
-export function useRoomSocket(roomId: string) {
+export function useRoomSocket(roomId: string, nameTag: string) {
   const clientRef = useRef<Client | null>(null);
   const clientIdRef = useRef(getClientId());
 
@@ -32,7 +32,7 @@ export function useRoomSocket(roomId: string) {
   const [lastEvent, setLastEvent] = useState<SyncEvent | null>(null);
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || !nameTag) return;
 
     const client = new Client({
       brokerURL: wsUrl(),
@@ -54,7 +54,8 @@ export function useRoomSocket(roomId: string) {
             type: "JOIN",
             time: 0,
             playing: false,
-            clientId: clientIdRef.current
+            clientId: clientIdRef.current,
+            nameTag
           })
         });
       },
@@ -71,7 +72,7 @@ export function useRoomSocket(roomId: string) {
       clientRef.current = null;
       void client.deactivate();
     };
-  }, [roomId]);
+  }, [roomId, nameTag]);
 
   const sendControl = useCallback(
     (

@@ -1,6 +1,9 @@
 package xyz.projectdarkhope.syncwatch.sync;
 
 import xyz.projectdarkhope.syncwatch.room.Room;
+import xyz.projectdarkhope.syncwatch.room.RoomParticipant;
+
+import java.util.List;
 
 public record SyncEvent(
         String type,
@@ -10,7 +13,8 @@ public record SyncEvent(
         long serverTime,
         String senderClientId,
         String hostClientId,
-        Long seekId
+        Long seekId,
+        List<RoomParticipant> participants
 ) {
     public static SyncEvent state(Room room) {
         return new SyncEvent(
@@ -21,7 +25,8 @@ public record SyncEvent(
                 System.currentTimeMillis(),
                 null,
                 room.getHostClientId(),
-                room.getSeekVersion()
+                room.getSeekVersion(),
+                null
         );
     }
 
@@ -34,7 +39,8 @@ public record SyncEvent(
                 System.currentTimeMillis(),
                 senderClientId,
                 room.getHostClientId(),
-                room.getSeekVersion()
+                room.getSeekVersion(),
+                null
         );
     }
 
@@ -47,7 +53,8 @@ public record SyncEvent(
                 System.currentTimeMillis(),
                 senderClientId,
                 room.getHostClientId(),
-                room.getSeekVersion()
+                room.getSeekVersion(),
+                null
         );
     }
 
@@ -60,7 +67,22 @@ public record SyncEvent(
                 System.currentTimeMillis(),
                 senderClientId,
                 room.getHostClientId(),
-                room.getSeekVersion()
+                room.getSeekVersion(),
+                null
+        );
+    }
+
+    public static SyncEvent participants(Room room) {
+        return new SyncEvent(
+                "PARTICIPANTS",
+                0,
+                false,
+                null,
+                System.currentTimeMillis(),
+                null,
+                room.getHostClientId(),
+                room.getSeekVersion(),
+                room.getParticipants()
         );
     }
 }

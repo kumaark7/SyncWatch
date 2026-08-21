@@ -1,7 +1,9 @@
 package xyz.projectdarkhope.syncwatch.sync;
 
 import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import xyz.projectdarkhope.syncwatch.room.Room;
@@ -21,7 +23,8 @@ public class SyncController {
     @MessageMapping("/room/{roomId}/control")
     public void control(
             @DestinationVariable String roomId,
-            SyncMessage message
+            SyncMessage message,
+            @Header(SimpMessageHeaderAccessor.SESSION_ID_HEADER) String sessionId
     ) {
         Room room = rooms.find(roomId).orElse(null);
 
@@ -36,9 +39,21 @@ public class SyncController {
         }
 
         if ("JOIN".equals(type)) {
+            if (!room.registerParticipant(
+                    message.clientId(),
+                    message.nameTag(),
+                    sessionId
+            )) {
+                return;
+            }
+
             messaging.convertAndSend(
                     "/topic/room/" + room.getId(),
                     SyncEvent.state(room)
+            );
+            messaging.convertAndSend(
+                    "/topic/room/" + room.getId(),
+                    SyncEvent.participants(room)
             );
             return;
         }

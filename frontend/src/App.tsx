@@ -3,7 +3,7 @@ import { API_URL } from "./api";
 import DrivePicker from "./DrivePicker";
 import VideoPlayer from "./VideoPlayer";
 import { useRoomSocket } from "./useRoomSocket";
-import type { RoomState } from "./types";
+import type { Participant, RoomState } from "./types";
 import "./style.css";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -11,6 +11,7 @@ const DRIVE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";
 
 const TOKEN_EXPIRY_SKEW_MS = 60000;
+const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
 
 type GoogleConnection = {
   accessToken: string;
@@ -40,6 +41,16 @@ export default function App() {
   const [joinCode, setJoinCode] =
     useState("");
 
+  const [nameTag, setNameTag] = useState(
+    () => sessionStorage.getItem(NAME_TAG_STORAGE_KEY) ?? ""
+  );
+
+  const [participants, setParticipants] =
+    useState<Participant[]>([]);
+
+  const [peopleOpen, setPeopleOpen] =
+    useState(false);
+
   const [room, setRoom] =
     useState<RoomState | null>(null);
 
@@ -63,7 +74,7 @@ export default function App() {
     lastEvent,
     sendControl,
     clientId
-  } = useRoomSocket(roomId);
+  } = useRoomSocket(roomId, nameTag.trim());
 
   /*
    * Wait for Google APIs to load.
@@ -127,6 +138,11 @@ export default function App() {
    */
   useEffect(() => {
     if (!lastEvent) {
+      return;
+    }
+
+    if (lastEvent.type === "PARTICIPANTS") {
+      setParticipants(lastEvent.participants ?? []);
       return;
     }
 
@@ -245,6 +261,10 @@ export default function App() {
    * CREATE ROOM
    */
   async function createRoom() {
+    if (!saveNameTag()) {
+      return;
+    }
+
     const response =
       await fetch(
         `${API_URL}/api/rooms?clientId=${encodeURIComponent(
@@ -283,6 +303,10 @@ export default function App() {
    * JOIN ROOM
    */
   async function joinRoom() {
+    if (!saveNameTag()) {
+      return;
+    }
+
     const code =
       joinCode
         .trim()
@@ -319,6 +343,18 @@ export default function App() {
     setRoomId(code);
 
     setRoom(data);
+  }
+
+  function saveNameTag() {
+    const cleanedName = nameTag.trim();
+    if (!cleanedName) {
+      alert("Enter a name tag before continuing.");
+      return false;
+    }
+
+    sessionStorage.setItem(NAME_TAG_STORAGE_KEY, cleanedName);
+    setNameTag(cleanedName);
+    return true;
   }
 
   /*
@@ -705,6 +741,15 @@ export default function App() {
           watch party.
         </p>
 
+        <input
+          className="nameTagInput"
+          value={nameTag}
+          onChange={(event) => setNameTag(event.target.value)}
+          placeholder="Your name tag"
+          maxLength={40}
+          aria-label="Your name tag"
+        />
+
         <button
           className="primary"
           onClick={createRoom}
@@ -743,6 +788,31 @@ export default function App() {
 
         </div>
 
+      </main>
+    );
+  }
+
+  if (!nameTag.trim()) {
+    return (
+      <main className="shell home">
+        <h1>Choose your name tag</h1>
+        <p>Your name tag is visible only to people in this room.</p>
+        <input
+          className="nameTagInput"
+          value={nameTag}
+          onChange={(event) => setNameTag(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              saveNameTag();
+            }
+          }}
+          placeholder="Your name tag"
+          maxLength={40}
+          autoFocus
+        />
+        <button className="primary" onClick={saveNameTag}>
+          Enter room
+        </button>
       </main>
     );
   }
@@ -810,6 +880,15 @@ export default function App() {
           Copy invite
         </button>
 
+        <button
+          className="peopleButton"
+          aria-expanded={peopleOpen}
+          aria-controls="people-panel"
+          onClick={() => setPeopleOpen((open) => !open)}
+        >
+          People ({participants.length})
+        </button>
+
       </header>
 
       {/* VIDEO PLAYER */}
@@ -834,7 +913,9 @@ export default function App() {
         }
 
         syncEvent={
-          lastEvent
+          lastEvent?.type === "PARTICIPANTS"
+            ? null
+            : lastEvent
         }
 
         onControl={
@@ -959,6 +1040,42 @@ export default function App() {
         )}
 
       </section>
+
+      <aside
+        id="people-panel"
+        className={`peoplePanel ${peopleOpen ? "peoplePanelOpen" : ""}`}
+        aria-label="People in this room"
+      >
+        <div className="peoplePanelHeader">
+          <div>
+            <strong>People</strong>
+            <div className="muted">{participants.length} connected</div>
+          </div>
+          <button aria-label="Close people panel" onClick={() => setPeopleOpen(false)}>
+            Close
+          </button>
+        </div>
+
+        <ul className="participantList">
+          {participants.map((participant) => {
+            const isYou = participant.clientId === clientId;
+            return (
+              <li className="participant" key={participant.clientId}>
+                <span className="participantAvatar" aria-hidden="true">
+                  {participant.nameTag.slice(0, 1).toUpperCase()}
+                </span>
+                <span>
+                  <strong>{participant.nameTag}</strong>
+                  <span className="participantMeta">
+                    {participant.host ? "Host" : "Guest"}
+                    {isYou ? " · You" : ""}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </aside>
 
       {/* TOAST */}
 
