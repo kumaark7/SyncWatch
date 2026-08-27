@@ -19,7 +19,6 @@
   --page-gap: 12px;
   --control-height: 40px;
 }
-
 * { box-sizing: border-box; }
 
 html { min-width: 320px; }
@@ -459,7 +458,7 @@ input, select {
   min-height: calc(100vh - 94px);
   max-height: calc(100vh - 94px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 14px;
   padding: 16px;
   overflow: hidden;
@@ -486,6 +485,41 @@ input, select {
   color: #dce4f2;
 }
 
+.partyTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: rgba(7, 10, 16, 0.72);
+}
+
+.partyTabs button {
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 10px;
+}
+
+.partyTabs button.active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.unreadBadge {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #4f7cff, var(--accent-2));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
 .participantList {
   min-height: 0;
   list-style: none;
@@ -555,6 +589,157 @@ input, select {
   line-height: 1.2;
 }
 
+.chatPanel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.chatMessagesWrap {
+  position: relative;
+  min-height: 0;
+}
+
+.chatMessages {
+  height: 100%;
+  min-height: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.chatEmpty {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.chatMessage {
+  max-width: 92%;
+  display: grid;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: rgba(16, 23, 36, 0.72);
+}
+
+.chatMessage.own {
+  align-self: end;
+  background: rgba(79, 124, 255, 0.13);
+  border-color: rgba(125, 162, 255, 0.28);
+}
+
+.chatMessageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chatMessageHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatMessageHeader time {
+  flex: 0 0 auto;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.chatMessage p {
+  margin: 0;
+  color: #dce4f2;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chatSystemMessage {
+  align-self: center;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.chatSystemMessage span {
+  overflow-wrap: anywhere;
+}
+
+.chatSystemMessage time {
+  flex: 0 0 auto;
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.newMessagesButton {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  min-height: 30px;
+  transform: translateX(-50%);
+  border-color: rgba(125, 162, 255, 0.34);
+  background: rgba(20, 29, 45, 0.94);
+  color: #dfe8ff;
+  font-size: 12px;
+}
+
+.chatComposer {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.chatComposer textarea {
+  width: 100%;
+  min-height: 62px;
+  max-height: 120px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #0b1019;
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.35;
+}
+
+.chatComposerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chatLimit {
+  color: var(--muted-2);
+  font-size: 12px;
+}
+
+.chatLimit.over {
+  color: var(--danger);
+}
 .roomCard {
   display: grid;
   gap: 12px;
@@ -802,7 +987,4 @@ input, select {
     top: calc(50% + 86px);
   }
 }
-
-
-
 

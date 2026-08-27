@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { getAuthSession, login, logout, type AuthSession } from "./authApi";
+import { getAuthSession, joinAsGuest, login, logout, type AuthSession } from "./authApi";
 
 type AuthContextValue = {
   session: AuthSession;
   loading: boolean;
   signIn: (username: string, password: string) => Promise<void>;
+  joinGuest: (roomId: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -14,7 +15,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession>({
     authenticated: false,
-    username: null
+    username: null,
+    role: null,
+    allowedRoomId: null,
+    displayName: null,
+    clientId: null
   });
   const [loading, setLoading] = useState(true);
 
@@ -43,6 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     signIn: async (username, password) => {
       setSession(await login(username, password));
+    },
+    joinGuest: async (roomId, displayName) => {
+      setSession(await joinAsGuest(roomId, displayName));
     },
     signOut: async () => {
       setSession(await logout());

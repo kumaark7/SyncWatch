@@ -6,25 +6,34 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
+import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
+import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
+import xyz.projectdarkhope.syncwatch.auth.AuthService;
+
+import java.util.Map;
 
 @Controller
 public class SyncController {
 
     private final RoomStore rooms;
     private final SimpMessagingTemplate messaging;
+    private final ChatService chatService;
 
-    public SyncController(RoomStore rooms, SimpMessagingTemplate messaging) {
+    public SyncController(RoomStore rooms, SimpMessagingTemplate messaging, ChatService chatService) {
         this.rooms = rooms;
         this.messaging = messaging;
+        this.chatService = chatService;
     }
 
     @MessageMapping("/room/{roomId}/control")
     public void control(
             @DestinationVariable String roomId,
             SyncMessage message,
-            @Header(SimpMessageHeaderAccessor.SESSION_ID_HEADER) String sessionId
+            @Header(SimpMessageHeaderAccessor.SESSION_ID_HEADER) String sessionId,
+            @Header(name = "simpSessionAttributes", required = false) Map<String, Object> sessionAttributes
     ) {
         Room room = rooms.find(roomId).orElse(null);
 
@@ -38,12 +47,30 @@ public class SyncController {
             return;
         }
 
+        String effectiveClientId = message.clientId();
+        String participantName = message.nameTag();
+        if (sessionAttributes != null
+                && AuthService.ROLE_GUEST.equals(sessionAttributes.get(AuthService.SESSION_ROLE))) {
+            Object allowedRoom = sessionAttributes.get(AuthService.SESSION_GUEST_ROOM);
+            Object guestName = sessionAttributes.get(AuthService.SESSION_DISPLAY_NAME);
+            Object guestClientId = sessionAttributes.get(AuthService.SESSION_CLIENT_ID);
+            if (!(allowedRoom instanceof String allowed)
+                    || !room.getId().equalsIgnoreCase(allowed)
+                    || !(guestName instanceof String)
+                    || !(guestClientId instanceof String)) {
+                return;
+            }
+            participantName = (String) guestName;
+            effectiveClientId = (String) guestClientId;
+        }
+
         if ("JOIN".equals(type)) {
-            if (!room.registerParticipant(
-                    message.clientId(),
-                    message.nameTag(),
+            Room.ParticipantRegistration registration = room.registerParticipant(
+                    effectiveClientId,
+                    participantName,
                     sessionId
-            )) {
+            );
+            if (!registration.accepted()) {
                 return;
             }
 
@@ -55,6 +82,17 @@ public class SyncController {
                     "/topic/room/" + room.getId(),
                     SyncEvent.participants(room)
             );
+            if (registration.joined()) {
+                ChatMessage joinMessage = chatService.createPresenceMessage(
+                        room,
+                        registration.participant(),
+                        ChatMessageType.SYSTEM_JOIN
+                );
+                messaging.convertAndSend(
+                        "/topic/rooms/" + room.getId() + "/chat",
+                        joinMessage
+                );
+            }
             return;
         }
 
@@ -64,7 +102,7 @@ public class SyncController {
             return;
         }
 
-        if (message.clientId() == null || message.clientId().isBlank()) {
+        if (effectiveClientId == null || effectiveClientId.isBlank()) {
             return;
         }
 
@@ -87,7 +125,7 @@ public class SyncController {
 
         messaging.convertAndSend(
                 "/topic/room/" + room.getId(),
-                SyncEvent.control(type, room, message.clientId())
+                SyncEvent.control(type, room, effectiveClientId)
         );
     }
 }

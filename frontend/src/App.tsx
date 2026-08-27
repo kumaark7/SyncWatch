@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
 import ConnectionStatus from "./components/ConnectionStatus";
 import MediaInfo from "./components/MediaInfo";
@@ -8,6 +9,7 @@ import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
 import DrivePicker from "./DrivePicker";
 import PartyPanel from "./party/PartyPanel";
+import type { ChatMessage } from "./party/chat/types";
 import VideoPlayer from "./VideoPlayer";
 import { useRoomSocket } from "./useRoomSocket";
 import type { Participant, RoomState } from "./types";
@@ -49,6 +51,8 @@ function googleApisReady() {
 
 function AppContent() {
   const auth = useAuth();
+  const inviteRoomId = roomFromUrl();
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   if (auth.loading) {
     return (
@@ -59,27 +63,59 @@ function AppContent() {
   }
 
   if (!auth.session.authenticated) {
+    if (inviteRoomId && !showAdminLogin) {
+      return (
+        <GuestJoinPage
+          roomId={inviteRoomId}
+          onJoin={auth.joinGuest}
+          onAdminLogin={() => setShowAdminLogin(true)}
+        />
+      );
+    }
+
     return <LoginPage onLogin={auth.signIn} />;
   }
 
-  return <AuthenticatedApp username={auth.session.username || "User"} onLogout={auth.signOut} />;
+  return (
+    <AuthenticatedApp
+      username={auth.session.username || "User"}
+      initialRoomId={
+        auth.session.role === "GUEST"
+          ? auth.session.allowedRoomId || ""
+          : inviteRoomId
+      }
+      initialDisplayName={auth.session.displayName}
+      sessionClientId={auth.session.clientId}
+      onLogout={auth.signOut}
+    />
+  );
 }
 
 function AuthenticatedApp({
   username,
+  initialRoomId,
+  initialDisplayName,
+  sessionClientId,
   onLogout
 }: {
   username: string;
+  initialRoomId: string;
+  initialDisplayName: string | null;
+  sessionClientId: string | null;
   onLogout: () => Promise<void>;
 }) {
   const [roomId, setRoomId] =
-    useState(roomFromUrl());
+    useState(initialRoomId);
 
   const [joinCode, setJoinCode] =
-    useState(roomFromUrl());
+    useState(initialRoomId);
 
   const [nameTag, setNameTag] = useState(
-    () => sessionStorage.getItem(NAME_TAG_STORAGE_KEY) ?? ""
+    () => initialDisplayName ?? sessionStorage.getItem(NAME_TAG_STORAGE_KEY) ?? ""
+  );
+
+  const [joinedNameTag, setJoinedNameTag] = useState(
+    () => initialDisplayName?.trim() ?? ""
   );
 
   const [participants, setParticipants] =
@@ -102,10 +138,15 @@ function AuthenticatedApp({
 
   const {
     connected,
+    chatReady,
     lastEvent,
     sendControl,
-    clientId
-  } = useRoomSocket(roomId, nameTag.trim());
+    clientId,
+    chatMessages,
+    lastChatMessage,
+    sendChatMessage,
+    mergeChatHistory
+  } = useRoomSocket(roomId, joinedNameTag, sessionClientId);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -153,6 +194,30 @@ function AuthenticatedApp({
       });
   }, [roomId, clientId]);
 
+  useEffect(() => {
+    const joinedRoom = participants.some((participant) => participant.clientId === clientId);
+    if (!roomId || !connected || !joinedNameTag || !joinedRoom) {
+      return;
+    }
+
+    fetch(
+      `${API_URL}/api/rooms/${roomId}/chat?clientId=${encodeURIComponent(clientId)}`,
+      { credentials: "include" }
+    )
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Could not load chat history");
+        }
+
+        return response.json() as Promise<ChatMessage[]>;
+      })
+      .then((messages) => {
+        mergeChatHistory(messages);
+      })
+      .catch(() => {
+        // History can race the initial room JOIN; live chat still works once connected.
+      });
+  }, [roomId, connected, joinedNameTag, clientId, participants, mergeChatHistory]);
   useEffect(() => {
     if (!lastEvent) {
       return;
@@ -262,20 +327,22 @@ function AuthenticatedApp({
     }
 
     const data = await response.json();
-    history.pushState({}, "", `/room/${code}?guest=1`);
+    history.pushState({}, "", `/room/${code}`);
     setRoomId(code);
     setRoom(data);
   }
 
   function saveNameTag() {
     const cleanedName = nameTag.trim();
-    if (!cleanedName) {
-      alert("Enter a name tag before continuing.");
+    const nameLength = Array.from(cleanedName).length;
+    if (nameLength < 2 || nameLength > 32) {
+      alert("Your name must be 2 to 32 characters.");
       return false;
     }
 
     sessionStorage.setItem(NAME_TAG_STORAGE_KEY, cleanedName);
     setNameTag(cleanedName);
+    setJoinedNameTag(cleanedName);
     return true;
   }
 
@@ -422,7 +489,7 @@ function AuthenticatedApp({
   }
 
   async function copyInvite() {
-    const inviteUrl = `${window.location.origin}/room/${roomId}?guest=1`;
+    const inviteUrl = `${window.location.origin}/?room=${roomId}`;
 
     try {
       await navigator.clipboard.writeText(inviteUrl);
@@ -505,7 +572,7 @@ function AuthenticatedApp({
               value={nameTag}
               onChange={(event) => setNameTag(event.target.value)}
               placeholder="Your name tag"
-              maxLength={40}
+              maxLength={32}
               aria-label="Your name tag"
             />
 
@@ -529,7 +596,7 @@ function AuthenticatedApp({
             </div>
           </div>
         </section>
-      ) : !nameTag.trim() ? (
+      ) : !joinedNameTag ? (
         <section className="homePanel compactHome">
           <div className="roomEntryCard">
             <h1>Choose your name tag</h1>
@@ -544,11 +611,11 @@ function AuthenticatedApp({
                 }
               }}
               placeholder="Your name tag"
-              maxLength={40}
+              maxLength={32}
               autoFocus
             />
             <button className="primary" onClick={saveNameTag}>
-              Enter room
+              Join Watch Party
             </button>
           </div>
         </section>
@@ -604,6 +671,11 @@ function AuthenticatedApp({
               roomId={roomId}
               participants={participants}
               clientId={clientId}
+              connected={chatReady}
+              chatMessages={chatMessages}
+              lastChatMessage={lastChatMessage}
+              onSendChat={sendChatMessage}
+              onChatError={showToast}
               onCopyRoom={() => void copyRoomCode()}
               onCopyInvite={() => void copyInvite()}
             />
@@ -623,5 +695,3 @@ export default function App() {
     </AuthProvider>
   );
 }
-
-

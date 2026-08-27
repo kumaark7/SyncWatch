@@ -12,6 +12,12 @@ import java.io.IOException;
 
 @Component
 public class AuthFilter extends OncePerRequestFilter {
+    private final AuthService authService;
+
+    public AuthFilter(AuthService authService) {
+        this.authService = authService;
+    }
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -37,13 +43,56 @@ public class AuthFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         HttpSession session = request.getSession(false);
-        if (session != null && Boolean.TRUE.equals(session.getAttribute(AuthService.SESSION_AUTHENTICATED))) {
+        if (authService.isAdmin(session)) {
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        if (authService.isAuthenticated(session)) {
+            if ("/ws".equals(request.getRequestURI())) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            String roomId = roomIdFromGuestPath(request.getRequestURI(), request.getMethod());
+            if (roomId != null && authService.isGuestAllowedInRoom(session, roomId)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\":\"Guest access is limited to the invited room\"}");
             return;
         }
 
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
         response.getWriter().write("{\"error\":\"Authentication required\"}");
+    }
+
+    private String roomIdFromGuestPath(String path, String method) {
+        if (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method)) {
+            return null;
+        }
+
+        String roomsPrefix = "/api/rooms/";
+        if (path.startsWith(roomsPrefix)) {
+            String remainder = path.substring(roomsPrefix.length());
+            String[] parts = remainder.split("/", -1);
+            if (parts.length == 1 || (parts.length == 2 && "chat".equals(parts[1]))) {
+                return parts[0];
+            }
+        }
+
+        String streamPrefix = "/api/stream/";
+        if (path.startsWith(streamPrefix)) {
+            String remainder = path.substring(streamPrefix.length());
+            if (!remainder.isBlank() && !remainder.contains("/")) {
+                return remainder;
+            }
+        }
+
+        return null;
     }
 }

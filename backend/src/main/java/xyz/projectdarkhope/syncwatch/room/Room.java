@@ -8,6 +8,12 @@ import java.util.Map;
 import java.util.Set;
 
 public class Room {
+    public record ParticipantRegistration(
+            boolean accepted,
+            boolean joined,
+            RoomParticipant participant
+    ) {}
+
     private final String id;
     private volatile String fileId;
     private volatile String fileName;
@@ -79,7 +85,7 @@ public class Room {
         return currentTime + (System.currentTimeMillis() - updatedAt) / 1000.0;
     }
 
-    public synchronized boolean registerParticipant(
+    public synchronized ParticipantRegistration registerParticipant(
             String clientId,
             String nameTag,
             String sessionId
@@ -87,34 +93,65 @@ public class Room {
         if (clientId == null || clientId.isBlank()
                 || nameTag == null || nameTag.isBlank()
                 || sessionId == null || sessionId.isBlank()) {
-            return false;
+            return new ParticipantRegistration(false, false, null);
         }
 
+        boolean alreadyPresent = participantNames.containsKey(clientId);
         participantNames.put(clientId, nameTag.trim());
-        sessionsByClientId
+        boolean sessionAdded = sessionsByClientId
                 .computeIfAbsent(clientId, ignored -> new HashSet<>())
                 .add(sessionId);
-        return true;
+        RoomParticipant participant = new RoomParticipant(
+                clientId,
+                participantNames.get(clientId),
+                isHost(clientId)
+        );
+        return new ParticipantRegistration(true, !alreadyPresent && sessionAdded, participant);
     }
 
-    public synchronized boolean removeSession(String sessionId) {
-        boolean changed = false;
+    public synchronized List<RoomParticipant> removeSession(String sessionId) {
+        List<RoomParticipant> departures = new ArrayList<>();
 
         for (var entry : new ArrayList<>(sessionsByClientId.entrySet())) {
             if (!entry.getValue().remove(sessionId)) {
                 continue;
             }
 
-            changed = true;
             if (entry.getValue().isEmpty()) {
+                String clientId = entry.getKey();
+                String nameTag = participantNames.get(clientId);
                 sessionsByClientId.remove(entry.getKey());
                 participantNames.remove(entry.getKey());
+                if (nameTag != null) {
+                    departures.add(new RoomParticipant(clientId, nameTag, isHost(clientId)));
+                }
             }
         }
 
-        return changed;
+        return departures;
     }
 
+    public synchronized boolean hasParticipant(String clientId) {
+        return clientId != null && participantNames.containsKey(clientId);
+    }
+
+    public synchronized String getParticipantName(String clientId) {
+        return clientId == null ? null : participantNames.get(clientId);
+    }
+
+    public synchronized String getClientIdForSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+
+        for (var entry : sessionsByClientId.entrySet()) {
+            if (entry.getValue().contains(sessionId)) {
+                return entry.getKey();
+            }
+        }
+
+        return null;
+    }
     public synchronized List<RoomParticipant> getParticipants() {
         return participantNames.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue(String.CASE_INSENSITIVE_ORDER))
