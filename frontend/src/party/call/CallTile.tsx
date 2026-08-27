@@ -67,19 +67,23 @@ export default function CallTile({ participant, onLeave }: Props) {
 
   useEffect(() => {
     const update = () => refresh((value) => value + 1);
-    const events = [
-      ParticipantEvent.TrackPublished,
-      ParticipantEvent.TrackUnpublished,
-      ParticipantEvent.TrackSubscribed,
-      ParticipantEvent.TrackUnsubscribed,
-      ParticipantEvent.TrackMuted,
-      ParticipantEvent.TrackUnmuted,
-      ParticipantEvent.IsSpeakingChanged
-    ];
 
-    events.forEach((event) => participant.on(event, update));
+    participant.on(ParticipantEvent.TrackPublished, update);
+    participant.on(ParticipantEvent.TrackUnpublished, update);
+    participant.on(ParticipantEvent.TrackSubscribed, update);
+    participant.on(ParticipantEvent.TrackUnsubscribed, update);
+    participant.on(ParticipantEvent.TrackMuted, update);
+    participant.on(ParticipantEvent.TrackUnmuted, update);
+    participant.on(ParticipantEvent.IsSpeakingChanged, update);
+
     return () => {
-      events.forEach((event) => participant.off(event, update));
+      participant.off(ParticipantEvent.TrackPublished, update);
+      participant.off(ParticipantEvent.TrackUnpublished, update);
+      participant.off(ParticipantEvent.TrackSubscribed, update);
+      participant.off(ParticipantEvent.TrackUnsubscribed, update);
+      participant.off(ParticipantEvent.TrackMuted, update);
+      participant.off(ParticipantEvent.TrackUnmuted, update);
+      participant.off(ParticipantEvent.IsSpeakingChanged, update);
     };
   }, [participant]);
 
