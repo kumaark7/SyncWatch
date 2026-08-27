@@ -80,7 +80,11 @@ public class AuthFilter extends OncePerRequestFilter {
         if (path.startsWith(roomsPrefix)) {
             String remainder = path.substring(roomsPrefix.length());
             String[] parts = remainder.split("/", -1);
-            if (parts.length == 1 || (parts.length == 2 && "chat".equals(parts[1]))) {
+            if (parts.length == 1
+                    || (parts.length == 2 && "chat".equals(parts[1]))
+                    || (parts.length == 3
+                    && "call".equals(parts[1])
+                    && "token".equals(parts[2]))) {
                 return parts[0];
             }
         }

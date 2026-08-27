@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import GuestJoinPage from "./auth/GuestJoinPage";
@@ -9,7 +9,12 @@ import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
 import DrivePicker from "./DrivePicker";
 import PartyPanel from "./party/PartyPanel";
+import ChatToastStack from "./party/chat/ChatToast";
 import type { ChatMessage } from "./party/chat/types";
+import CallProvider from "./party/call/CallProvider";
+import FloatingCallWindow from "./party/call/FloatingCallWindow";
+import useFullscreenState from "./party/call/useFullscreenState";
+import type { PartyTab } from "./party/types";
 import VideoPlayer from "./VideoPlayer";
 import { useRoomSocket } from "./useRoomSocket";
 import type { Participant, RoomState } from "./types";
@@ -130,6 +135,16 @@ function AuthenticatedApp({
   const [theaterMode, setTheaterMode] =
     useState(false);
 
+  const [partyTab, setPartyTab] =
+    useState<PartyTab>("people");
+
+  const [chatUnreadCount, setChatUnreadCount] =
+    useState(0);
+
+  const appShellRef = useRef<HTMLElement>(null);
+  const lastUnreadMessageIdRef = useRef<string | null>(null);
+  const fullscreenElement = useFullscreenState();
+
   const [googleConnection, setGoogleConnection] =
     useState<GoogleConnection | null>(null);
 
@@ -152,6 +167,58 @@ function AuthenticatedApp({
     setToast(message);
     window.setTimeout(() => setToast(""), 2200);
   };
+
+  const fullscreenActive = Boolean(fullscreenElement);
+  const fullscreenCanHostOverlay = Boolean(
+    fullscreenElement
+      && appShellRef.current
+      && (fullscreenElement === appShellRef.current
+        || fullscreenElement.contains(appShellRef.current))
+  );
+  const partyRailHidden = theaterMode || fullscreenActive;
+  const chatVisible = partyTab === "chat" && !partyRailHidden;
+
+  useEffect(() => {
+    if (!theaterMode) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !document.fullscreenElement) {
+        setTheaterMode(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [theaterMode]);
+
+  useEffect(() => {
+    if (chatVisible) {
+      setChatUnreadCount(0);
+    }
+  }, [chatVisible]);
+
+  useEffect(() => {
+    lastUnreadMessageIdRef.current = null;
+    setChatUnreadCount(0);
+    setPartyTab("people");
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!lastChatMessage
+        || lastChatMessage.senderId === clientId
+        || lastUnreadMessageIdRef.current === lastChatMessage.id) {
+      return;
+    }
+
+    lastUnreadMessageIdRef.current = lastChatMessage.id;
+    if (chatVisible) {
+      return;
+    }
+
+    setChatUnreadCount((count) => count + 1);
+  }, [chatVisible, clientId, lastChatMessage]);
 
   useEffect(() => {
     if (googleReady) {
@@ -535,9 +602,13 @@ function AuthenticatedApp({
   ) : null;
 
   const hasRoom = Boolean(roomId && room);
+  const hasWatchLayout = Boolean(roomId && joinedNameTag && room);
 
   return (
-    <main className={`appShell ${theaterMode ? "theater" : ""} ${!roomId ? "homeShell" : ""}`}>
+    <main
+      ref={appShellRef}
+      className={`appShell ${theaterMode ? "theater" : ""} ${fullscreenActive ? "fullscreenMode" : ""} ${!roomId ? "homeShell" : ""} ${hasWatchLayout ? "watchShell" : ""}`}
+    >
       <header className="topBar">
         <div className="brandBlock">
           <strong>SyncWatch</strong>
@@ -636,51 +707,70 @@ function AuthenticatedApp({
           </div>
         </section>
       ) : (
-        <section className="watchLayout">
-          <div className="watchColumn">
-            <section className="playerSurface">
-              <VideoPlayer
-                roomId={roomId}
-                hasFile={room.hasFile}
+        <CallProvider roomId={roomId} clientId={clientId}>
+          <section className="watchLayout">
+            <div className="watchColumn">
+              <section className="playerSurface">
+                <VideoPlayer
+                  roomId={roomId}
+                  hasFile={room.hasFile}
+                  fileName={room.fileName}
+                  initialTime={room.currentTime}
+                  initialPlaying={room.playing}
+                  syncEvent={lastEvent?.type === "PARTICIPANTS" ? null : lastEvent}
+                  onControl={sendControl}
+                  clientId={clientId}
+                  isHost={room.isHost}
+                />
+
+                {!room.hasFile && googleActions && (
+                  <div className="emptyPlayerAction">
+                    {googleActions}
+                  </div>
+                )}
+              </section>
+
+              <MediaInfo
                 fileName={room.fileName}
-                initialTime={room.currentTime}
-                initialPlaying={room.playing}
-                syncEvent={lastEvent?.type === "PARTICIPANTS" ? null : lastEvent}
-                onControl={sendControl}
-                clientId={clientId}
+                googleConnected={Boolean(googleConnection)}
                 isHost={room.isHost}
+                googleActions={googleActions}
               />
+            </div>
 
-              {!room.hasFile && googleActions && (
-                <div className="emptyPlayerAction">
-                  {googleActions}
-                </div>
-              )}
-            </section>
+            {!partyRailHidden && (
+              <PartyPanel
+                roomId={roomId}
+                participants={participants}
+                clientId={clientId}
+                connected={chatReady}
+                chatMessages={chatMessages}
+                activeTab={partyTab}
+                unreadCount={chatUnreadCount}
+                onTabChange={setPartyTab}
+                onClearUnread={() => setChatUnreadCount(0)}
+                onSendChat={sendChatMessage}
+                onChatError={showToast}
+                onCopyRoom={() => void copyRoomCode()}
+                onCopyInvite={() => void copyInvite()}
+              />
+            )}
+          </section>
 
-            <MediaInfo
-              fileName={room.fileName}
-              googleConnected={Boolean(googleConnection)}
-              isHost={room.isHost}
-              googleActions={googleActions}
-            />
-          </div>
+          <FloatingCallWindow
+            roomId={roomId}
+            visible={theaterMode || fullscreenCanHostOverlay}
+          />
 
-          {!theaterMode && (
-            <PartyPanel
-              roomId={roomId}
-              participants={participants}
-              clientId={clientId}
-              connected={chatReady}
-              chatMessages={chatMessages}
-              lastChatMessage={lastChatMessage}
-              onSendChat={sendChatMessage}
-              onChatError={showToast}
-              onCopyRoom={() => void copyRoomCode()}
-              onCopyInvite={() => void copyInvite()}
-            />
-          )}
-        </section>
+          <ChatToastStack
+            key={roomId}
+            message={lastChatMessage}
+            clientId={clientId}
+            chatVisible={chatVisible}
+            suspended={fullscreenActive && !fullscreenCanHostOverlay}
+            onOpenChat={!partyRailHidden ? () => setPartyTab("chat") : undefined}
+          />
+        </CallProvider>
       )}
 
       <Toast message={toast} />

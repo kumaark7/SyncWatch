@@ -458,46 +458,80 @@ input, select {
   min-height: calc(100vh - 94px);
   max-height: calc(100vh - 94px);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 14px;
-  padding: 16px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px;
   overflow: hidden;
 }
 
 .partyPanelHeader {
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
+.partyPanelTitle {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.partyTitleDivider {
+  color: var(--muted-2);
+}
+
 .partyPanelHeader h2 {
-  margin: 6px 0 0;
+  margin: 0;
   color: #fff;
-  font-size: 22px;
+  font-size: 14px;
+  font-weight: 750;
   line-height: 1;
 }
 
 .participantCount {
-  width: 38px;
-  height: 38px;
+  min-width: 30px;
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
   padding: 0;
   color: #dce4f2;
+  font-size: 12px;
+}
+
+.partyPanelContent,
+.peoplePanel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.partyPanelContent {
+  display: grid;
+}
+
+.peoplePanel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
 }
 
 .partyTabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: rgba(7, 10, 16, 0.72);
 }
 
 .partyTabs button {
-  min-height: 34px;
+  min-width: 0;
+  min-height: 36px;
   border: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted);
   padding: 0 10px;
@@ -528,7 +562,8 @@ input, select {
   display: grid;
   align-content: start;
   gap: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .participant {
@@ -740,6 +775,255 @@ input, select {
 .chatLimit.over {
   color: var(--danger);
 }
+
+.callJoinState {
+  min-height: 0;
+  display: grid;
+  align-content: center;
+  justify-items: stretch;
+  gap: 12px;
+  padding: 16px 4px;
+  text-align: center;
+}
+
+.callJoinState h3 {
+  margin: 0 0 6px;
+  color: #fff;
+  font-size: 17px;
+}
+
+.callJoinState p,
+.callJoinState small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.callPanel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.callConnectionState {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.callConnectionState::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.callConnectionState.connected::before { background: var(--success); }
+.callConnectionState.reconnecting::before { background: var(--warning); }
+
+.callTiles {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.callTilesStack {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.callTilesCount1 {
+  grid-template-rows: minmax(0, min(38vh, 340px));
+  align-content: start;
+}
+
+.callTilesCount2 {
+  grid-template-rows: repeat(2, minmax(0, min(31vh, 300px)));
+  align-content: start;
+}
+
+.callTilesCount3 {
+  grid-template-rows: repeat(3, minmax(0, min(23vh, 220px)));
+  align-content: start;
+}
+
+.callTilesGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+}
+
+.callTilesGrid[data-count="4"] {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.callTilesGrid[data-count="5"],
+.callTilesGrid[data-count="6"] {
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+.callTilesOverflow {
+  grid-auto-rows: minmax(112px, 150px);
+  align-content: start;
+  padding-right: 3px;
+  overflow-y: auto;
+}
+
+.callTile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: #090e17;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.callTile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.callTile.speaking {
+  border-color: rgba(74, 222, 128, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.2);
+}
+
+.callTileVideo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.callTileVideo.self {
+  transform: scaleX(-1);
+}
+
+.callTileAvatar {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf2f8;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.callTileCaption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  z-index: 2;
+  min-height: 34px;
+  padding: 7px 9px;
+  background: linear-gradient(to top, rgba(5, 8, 13, 0.94), rgba(5, 8, 13, 0.7));
+  color: #fff;
+  font-size: 11px;
+}
+
+.callTileCaption > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.callMicState {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.callMicState.on { color: var(--success); }
+
+.callControlsWrap {
+  position: absolute;
+  right: 8px;
+  bottom: 40px;
+  left: 8px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(5px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.callControls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 11px;
+  background: rgba(7, 10, 16, 0.88);
+}
+
+.callControls button {
+  min-width: 0;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.callControls button.active {
+  border-color: rgba(125, 162, 255, 0.45);
+  background: rgba(79, 124, 255, 0.16);
+}
+
+.callControls .callLeaveButton {
+  border-color: rgba(255, 107, 117, 0.34);
+  background: rgba(255, 107, 117, 0.12);
+  color: #ffb4ba;
+}
+
+.callTile.local:focus-within .callControlsWrap,
+.callTile.local.controlsVisible .callControlsWrap,
+.callControlsWrap.hasError {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .callTile.local:hover .callControlsWrap {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
+.callError {
+  margin: 0;
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+}
 .roomCard {
   display: grid;
   gap: 12px;
@@ -762,13 +1046,306 @@ input, select {
   min-height: 46px;
 }
 
-.theater .watchLayout {
+/* Theater mode */
+.theater .watchLayout,
+.fullscreenMode .watchLayout {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.theater .playerSurface {
-  max-width: min(1500px, 100%);
-  margin: 0 auto;
+.theater .watchColumn,
+.fullscreenMode .watchColumn {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+}
+
+.theater .playerSurface,
+.fullscreenMode .playerSurface {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 10px;
+}
+
+.theater .videoFrame,
+.fullscreenMode .videoFrame,
+.theater .video,
+.fullscreenMode .video,
+.theater .videoPlaceholder,
+.fullscreenMode .videoPlaceholder {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.theater .video,
+.fullscreenMode .video {
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+
+.theater .mediaInfo,
+.fullscreenMode .mediaInfo {
+  display: none;
+}
+
+/* Floating call window */
+.floatingCallWindow,
+.floatingCallMinimized {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+}
+
+.floatingCallWindow {
+  min-width: 220px;
+  min-height: 140px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(125, 162, 255, 0.32);
+  border-radius: 12px;
+  background: rgba(8, 12, 20, 0.96);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.48);
+  container: floating-call / inline-size;
+}
+
+.floatingCallHeader {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  background: rgba(13, 18, 28, 0.96);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.floatingCallHeader > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.floatingCallHeader strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.floatingCallHeader button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.floatingCallStatusDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.floatingCallStatusDot.connected { background: var(--success); }
+
+.floatingCallGrid {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(96px, 1fr);
+  gap: 6px;
+  padding: 6px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.floatingCallGrid .callTile {
+  min-height: 96px;
+}
+
+@container floating-call (min-width: 330px) {
+  .floatingCallGrid[data-count="2"],
+  .floatingCallGrid[data-count="3"],
+  .floatingCallGrid[data-count="4"],
+  .floatingCallGrid[data-count="5"],
+  .floatingCallGrid[data-count="6"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container floating-call (min-width: 480px) {
+  .floatingCallGrid[data-count="5"],
+  .floatingCallGrid[data-count="6"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.floatingCallResizeHandle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.floatingCallResizeHandle::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(255, 255, 255, 0.58);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.58);
+}
+
+.floatingCallMinimized {
+  width: auto;
+  min-width: 126px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-color: rgba(125, 162, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(10, 15, 24, 0.96);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+}
+
+/* Chat message notifications */
+.chatToastStack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 90;
+  width: min(340px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.chatToast {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(125, 162, 255, 0.28);
+  border-radius: 11px;
+  background: rgba(12, 17, 27, 0.97);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  animation: chatToastIn 160ms ease-out;
+}
+
+.chatToast.clickable { cursor: pointer; }
+
+.chatToastOpen {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+}
+
+button.chatToastOpen:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.chatToastOpen:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chatToastAvatar {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf2f8;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.chatToastBody { min-width: 0; }
+
+.chatToastMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chatToastMeta strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatToastMeta time {
+  flex: 0 0 auto;
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.chatToastBody p {
+  margin: 3px 0 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: #c7d0df;
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.chatToastClose {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+@keyframes chatToastIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .loginShell {
@@ -879,6 +1456,68 @@ input, select {
   backdrop-filter: blur(7px);
 }
 
+@media (min-width: 981px) {
+  .appShell.watchShell {
+    height: 100dvh;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 360px);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--page-gap);
+    overflow: hidden;
+  }
+
+  .watchShell .topBar {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    margin: 0;
+  }
+
+  .watchShell .watchLayout {
+    display: contents;
+  }
+
+  .watchShell .watchColumn {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+    align-content: start;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .watchShell .partyPanel {
+    position: static;
+    grid-column: 2;
+    grid-row: 1 / 3;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .watchShell.theater,
+  .watchShell.fullscreenMode {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .watchShell.theater .topBar,
+  .watchShell.fullscreenMode .topBar {
+    min-height: 48px;
+    padding: 5px 10px;
+    border-radius: 10px;
+  }
+
+  .watchShell.theater .watchColumn,
+  .watchShell.fullscreenMode .watchColumn {
+    overflow: hidden;
+  }
+}
+
 
 @media (max-width: 1100px) {
   .watchLayout {
@@ -917,9 +1556,22 @@ input, select {
 
   .partyPanel {
     position: static;
-    min-height: auto;
+    height: clamp(520px, 72dvh, 680px);
+    min-height: 520px;
     max-height: none;
-    overflow: visible;
+    overflow: hidden;
+  }
+
+  .callTilesCount1 {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .callTilesCount2 {
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .callTilesCount3 {
+    grid-template-rows: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -974,6 +1626,64 @@ input, select {
     border-radius: 12px;
   }
 
+  .partyPanel {
+    height: clamp(520px, 72dvh, 640px);
+    padding: 12px;
+  }
+
+  .callControls button {
+    min-height: 44px;
+  }
+
+  .callControls {
+    gap: 8px;
+  }
+
+  .floatingCallWindow {
+    min-width: 0;
+    min-height: 180px;
+    max-width: calc(100vw - 24px);
+    max-height: min(58dvh, 440px);
+  }
+
+  .floatingCallHeader {
+    min-height: 44px;
+    padding-left: 12px;
+  }
+
+  .floatingCallHeader button {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    height: 40px;
+  }
+
+  .floatingCallGrid[data-count="2"],
+  .floatingCallGrid[data-count="3"],
+  .floatingCallGrid[data-count="4"],
+  .floatingCallGrid[data-count="5"],
+  .floatingCallGrid[data-count="6"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chatToastStack {
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .theater.appShell,
+  .fullscreenMode.appShell {
+    min-height: 100dvh;
+    padding: 6px;
+  }
+
+  .theater .topBar,
+  .fullscreenMode .topBar {
+    margin-bottom: 6px;
+  }
+
   .videoPlaceholder {
     min-height: 340px;
     aspect-ratio: auto;
@@ -985,6 +1695,26 @@ input, select {
 
   .emptyPlayerAction {
     top: calc(50% + 86px);
+  }
+}
+
+@media (max-width: 480px) {
+  .callTilesGrid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(150px, 42vw);
+    align-content: start;
+    padding-right: 3px;
+    overflow-y: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .callTile,
+  .callControlsWrap,
+  .chatToast {
+    transition: none;
+    animation: none;
   }
 }
 

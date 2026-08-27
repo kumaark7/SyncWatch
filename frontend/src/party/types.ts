@@ -1,1 +1,1 @@
-export type PartyTab = "people" | "chat";
+export type PartyTab = "people" | "chat" | "call";
