@@ -6,11 +6,15 @@ import {
   Mic,
   MicOff,
   PhoneOff,
+  Radio,
+  SlidersHorizontal,
   Video,
   VideoOff
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CallDeviceMenu from "./CallDeviceMenu";
+import CallQualityMenu from "./CallQualityMenu";
+import { useCall } from "./CallProvider";
 
 type Props = {
   onLeave: () => Promise<void>;
@@ -20,19 +24,42 @@ type Props = {
 
 export default function CallControls({ onLeave, onHideSelf, onInteract }: Props) {
   const {
-    localParticipant,
     isMicrophoneEnabled,
     isCameraEnabled
   } = useLocalParticipant();
+  const {
+    setMicrophoneEnabled,
+    setCameraEnabled,
+    switchInputDevice
+  } = useCall();
   const [busyControl, setBusyControl] = useState<"mic" | "camera" | "leave" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deviceMenu, setDeviceMenu] = useState<"audioinput" | "videoinput" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"audioinput" | "videoinput" | "quality" | null>(null);
+  const [pushToTalkEnabled, setPushToTalkEnabled] = useState(false);
+  const [pushToTalkActive, setPushToTalkActive] = useState(false);
   const controlsRef = useRef<HTMLDivElement>(null);
   const microphoneMenuButtonRef = useRef<HTMLButtonElement>(null);
   const cameraMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const qualityMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const pushToTalkEnabledRef = useRef(false);
+  const pushToTalkActiveRef = useRef(false);
+  const setMicrophoneEnabledRef = useRef(setMicrophoneEnabled);
+  const microphoneOperationRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    if (!deviceMenu) {
+    setMicrophoneEnabledRef.current = setMicrophoneEnabled;
+  }, [setMicrophoneEnabled]);
+
+  const queueMicrophoneState = useCallback((enabled: boolean) => {
+    const operation = microphoneOperationRef.current
+      .catch(() => undefined)
+      .then(() => setMicrophoneEnabledRef.current(enabled));
+    microphoneOperationRef.current = operation.catch(() => undefined);
+    return operation;
+  }, []);
+
+  useEffect(() => {
+    if (!openMenu) {
       return;
     }
 
@@ -41,23 +68,118 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
       if (
         target instanceof Node &&
         !controlsRef.current?.contains(target) &&
-        !(target instanceof Element && target.closest(".callDeviceMenu"))
+        !(target instanceof Element && target.closest(".callDeviceMenu, .callQualityMenu"))
       ) {
-        setDeviceMenu(null);
+        setOpenMenu(null);
       }
     }
 
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [deviceMenu]);
+  }, [openMenu]);
+
+  useEffect(() => {
+    if (!pushToTalkEnabled) {
+      return;
+    }
+
+    function isEditableTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      return target.matches("input, textarea, select, [contenteditable='true']")
+        || target.isContentEditable
+        || Boolean(target.closest("[contenteditable='true'], [role='textbox']"));
+    }
+
+    function releasePushToTalk() {
+      if (!pushToTalkActiveRef.current) {
+        return;
+      }
+
+      pushToTalkActiveRef.current = false;
+      setPushToTalkActive(false);
+      void queueMicrophoneState(false).catch(() => {
+        setError("Could not mute the microphone");
+      });
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (
+        event.key.toLowerCase() !== "p"
+        || event.repeat
+        || event.ctrlKey
+        || event.altKey
+        || event.metaKey
+        || isEditableTarget(event.target)
+        || !pushToTalkEnabledRef.current
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      pushToTalkActiveRef.current = true;
+      setPushToTalkActive(true);
+      setError(null);
+      void queueMicrophoneState(true).catch(() => {
+        pushToTalkActiveRef.current = false;
+        setPushToTalkActive(false);
+        setError("Could not enable the microphone");
+      });
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "p" || !pushToTalkActiveRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      releasePushToTalk();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", releasePushToTalk);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", releasePushToTalk);
+      releasePushToTalk();
+    };
+  }, [pushToTalkEnabled, queueMicrophoneState]);
 
   async function toggleMicrophone() {
     setBusyControl("mic");
     setError(null);
+    pushToTalkEnabledRef.current = false;
+    pushToTalkActiveRef.current = false;
+    setPushToTalkEnabled(false);
+    setPushToTalkActive(false);
     try {
-      await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+      await queueMicrophoneState(!isMicrophoneEnabled);
     } catch {
       setError("Microphone permission was not available");
+    } finally {
+      setBusyControl(null);
+    }
+  }
+
+  async function togglePushToTalk() {
+    setBusyControl("mic");
+    setError(null);
+    const enabled = !pushToTalkEnabled;
+    pushToTalkEnabledRef.current = enabled;
+    pushToTalkActiveRef.current = false;
+    setPushToTalkActive(false);
+
+    try {
+      await queueMicrophoneState(false);
+      setPushToTalkEnabled(enabled);
+    } catch {
+      pushToTalkEnabledRef.current = false;
+      setPushToTalkEnabled(false);
+      setError("Could not enable Push to Talk");
     } finally {
       setBusyControl(null);
     }
@@ -67,7 +189,7 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
     setBusyControl("camera");
     setError(null);
     try {
-      await localParticipant.setCameraEnabled(!isCameraEnabled);
+      await setCameraEnabled(!isCameraEnabled);
     } catch {
       setError("Camera permission was not available");
     } finally {
@@ -110,26 +232,39 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
             aria-label="Choose microphone"
             title="Choose microphone"
             aria-haspopup="menu"
-            aria-expanded={deviceMenu === "audioinput"}
+            aria-expanded={openMenu === "audioinput"}
             onFocus={onInteract}
             onPointerDown={onInteract}
-            onClick={() => setDeviceMenu((current) => (
+            onClick={() => setOpenMenu((current) => (
               current === "audioinput" ? null : "audioinput"
             ))}
           >
-            {deviceMenu === "audioinput"
+            {openMenu === "audioinput"
               ? <ChevronUp size={14} strokeWidth={2.6} aria-hidden="true" />
               : <ChevronDown size={14} strokeWidth={2.6} aria-hidden="true" />}
           </button>
-          {deviceMenu === "audioinput" && (
+          {openMenu === "audioinput" && (
             <CallDeviceMenu
               kind="audioinput"
               anchorRef={microphoneMenuButtonRef}
-              onClose={() => setDeviceMenu(null)}
+              onSelectDevice={switchInputDevice}
+              onClose={() => setOpenMenu(null)}
               onError={setError}
             />
           )}
         </div>
+        <button
+          className={`callControlIcon callPushToTalkButton ${pushToTalkEnabled ? "active" : ""} ${pushToTalkActive ? "holding" : ""}`}
+          disabled={busyControl !== null}
+          aria-label="Push to Talk (P)"
+          aria-pressed={pushToTalkEnabled}
+          title="Push to Talk (P)"
+          onFocus={onInteract}
+          onPointerDown={onInteract}
+          onClick={() => void togglePushToTalk()}
+        >
+          <Radio size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
         <div className="callControlCluster">
           <button
             className={`callControlIcon callControlMain ${isCameraEnabled ? "active" : ""}`}
@@ -151,26 +286,48 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
             aria-label="Choose camera"
             title="Choose camera"
             aria-haspopup="menu"
-            aria-expanded={deviceMenu === "videoinput"}
+            aria-expanded={openMenu === "videoinput"}
             onFocus={onInteract}
             onPointerDown={onInteract}
-            onClick={() => setDeviceMenu((current) => (
+            onClick={() => setOpenMenu((current) => (
               current === "videoinput" ? null : "videoinput"
             ))}
           >
-            {deviceMenu === "videoinput"
+            {openMenu === "videoinput"
               ? <ChevronUp size={14} strokeWidth={2.6} aria-hidden="true" />
               : <ChevronDown size={14} strokeWidth={2.6} aria-hidden="true" />}
           </button>
-          {deviceMenu === "videoinput" && (
+          {openMenu === "videoinput" && (
             <CallDeviceMenu
               kind="videoinput"
               anchorRef={cameraMenuButtonRef}
-              onClose={() => setDeviceMenu(null)}
+              onSelectDevice={switchInputDevice}
+              onClose={() => setOpenMenu(null)}
               onError={setError}
             />
           )}
         </div>
+        <button
+          ref={qualityMenuButtonRef}
+          className={`callControlIcon ${openMenu === "quality" ? "active" : ""}`}
+          aria-label="Call quality settings"
+          title="Call quality settings"
+          aria-haspopup="dialog"
+          aria-expanded={openMenu === "quality"}
+          onFocus={onInteract}
+          onPointerDown={onInteract}
+          onClick={() => setOpenMenu((current) => (
+            current === "quality" ? null : "quality"
+          ))}
+        >
+          <SlidersHorizontal size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+        {openMenu === "quality" && (
+          <CallQualityMenu
+            anchorRef={qualityMenuButtonRef}
+            onClose={() => setOpenMenu(null)}
+          />
+        )}
         <button
           className="callControlIcon"
           aria-label="Hide my preview"

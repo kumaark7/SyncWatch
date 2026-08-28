@@ -1293,7 +1293,7 @@ input, select {
   gap: 6px;
   z-index: 2;
   min-height: 34px;
-  padding: 7px 9px;
+  padding: 7px 34px 7px 9px;
   background: linear-gradient(to top, rgba(5, 8, 13, 0.94), rgba(5, 8, 13, 0.7));
   color: #fff;
   font-size: 11px;
@@ -1321,6 +1321,32 @@ input, select {
 
 .callMicState.on { color: var(--success); }
 
+.callConnectionQuality {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  z-index: 4;
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(7, 10, 16, 0.8);
+  color: var(--muted);
+  pointer-events: auto;
+  backdrop-filter: blur(5px);
+}
+
+.callConnectionQuality.strong { color: var(--success); }
+.callConnectionQuality.weak { color: #fbbf24; }
+.callConnectionQuality.lost { color: #ff9aa2; }
+
+.callConnectionQuality svg {
+  display: block;
+  pointer-events: none;
+}
+
 .callControlsWrap {
   position: absolute;
   right: 8px;
@@ -1337,8 +1363,8 @@ input, select {
 
 .callControls {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 11px;
@@ -1479,6 +1505,102 @@ input, select {
   height: 12px;
 }
 
+.callQualityMenu {
+  position: fixed;
+  z-index: 110;
+  width: min(292px, calc(100vw - 16px));
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid rgba(125, 162, 255, 0.32);
+  border-radius: 10px;
+  background: rgba(8, 12, 20, 0.98);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+}
+
+.callQualityMenu > strong {
+  padding: 0 2px 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.callQualitySection {
+  display: grid;
+  gap: 7px;
+}
+
+.callQualitySection + .callQualitySection {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.callQualitySection h3,
+.callQualityLabel {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.callQualityRow {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.callQualitySwitch {
+  width: 46px;
+  min-width: 46px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.callQualitySwitch[aria-checked="true"] {
+  border-color: rgba(125, 162, 255, 0.45);
+  background: rgba(79, 124, 255, 0.18);
+  color: #dce7ff;
+}
+
+.callQualitySwitch:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.callQualitySegments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.callQualitySegments button {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.callQualitySegments button.selected {
+  border-color: rgba(125, 162, 255, 0.5);
+  background: rgba(79, 124, 255, 0.2);
+  color: var(--text);
+}
+
 .callControlIcon svg {
   display: block;
   pointer-events: none;
@@ -1546,6 +1668,13 @@ input, select {
 .callControls button.active {
   border-color: rgba(125, 162, 255, 0.45);
   background: rgba(79, 124, 255, 0.16);
+}
+
+.callControls .callPushToTalkButton.holding {
+  border-color: rgba(74, 222, 128, 0.7);
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.16);
 }
 
 .callControls .callLeaveButton {
@@ -1879,7 +2008,7 @@ input, select {
 @media (hover: hover) and (pointer: fine) {
   @container floating-call (max-width: 280px) {
     .floatingCallGrid .callControls {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 3px;
       padding: 3px;
       border-radius: 8px;
@@ -1920,8 +2049,21 @@ input, select {
 
     .floatingCallGrid .callTileCaption {
       min-height: 27px;
-      padding: 5px 7px;
+      padding: 5px 30px 5px 7px;
       font-size: 10px;
+    }
+
+    .floatingCallGrid .callConnectionQuality {
+      right: 5px;
+      bottom: 4px;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+    }
+
+    .floatingCallGrid .callConnectionQuality svg {
+      width: 12px;
+      height: 12px;
     }
 
     .floatingCallGrid .callMicState {

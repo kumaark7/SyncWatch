@@ -17,7 +17,19 @@ import {
   type ReactNode
 } from "react";
 import { requestCallToken } from "./livekitApi";
-import type { CallStatus } from "./types";
+import {
+  createAudioCaptureOptions,
+  createVideoCaptureOptions,
+  getSupportedAudioProcessing,
+  loadCallQualitySettings,
+  saveCallQualitySettings
+} from "./callQuality";
+import type {
+  AudioProcessingSetting,
+  CallQualitySettings,
+  CallStatus,
+  VideoQualityMode
+} from "./types";
 
 type CallContextValue = {
   status: CallStatus;
@@ -25,8 +37,23 @@ type CallContextValue = {
   error: string | null;
   mutedRemoteParticipantIds: ReadonlySet<string>;
   listenersWhoMutedMe: ReadonlyMap<string, string>;
+  qualitySettings: CallQualitySettings;
+  supportedAudioProcessing: Readonly<Record<AudioProcessingSetting, boolean>>;
+  adaptiveStreamEnabled: true;
+  adaptiveStreamRuntimeConfigurable: false;
   joinCall: () => Promise<void>;
   leaveCall: () => Promise<void>;
+  setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
+  setCameraEnabled: (enabled: boolean) => Promise<void>;
+  setAudioProcessing: (
+    setting: AudioProcessingSetting,
+    enabled: boolean
+  ) => Promise<void>;
+  setVideoQuality: (quality: VideoQualityMode) => Promise<void>;
+  switchInputDevice: (
+    kind: "audioinput" | "videoinput",
+    deviceId: string
+  ) => Promise<void>;
   toggleRemoteAudio: (participantIdentity: string) => Promise<void>;
   clearError: () => void;
 };
@@ -57,7 +84,17 @@ export default function CallProvider({
   onCallLeft,
   children
 }: Props) {
-  const [room] = useState(() => new Room({ adaptiveStream: true, dynacast: true }));
+  const [qualitySettings, setQualitySettings] = useState(loadCallQualitySettings);
+  const [supportedAudioProcessing] = useState(getSupportedAudioProcessing);
+  const [room] = useState(() => new Room({
+    adaptiveStream: true,
+    dynacast: true,
+    audioCaptureDefaults: createAudioCaptureOptions(
+      qualitySettings,
+      supportedAudioProcessing
+    ),
+    videoCaptureDefaults: createVideoCaptureOptions(qualitySettings.videoQuality)
+  }));
   const [status, setStatus] = useState<CallStatus>("idle");
   const [participantCount, setParticipantCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -247,6 +284,138 @@ export default function CallProvider({
     }
   }, [clientId, onCallJoined, room, roomId]);
 
+  const applyAudioProcessing = useCallback(async (
+    settings: CallQualitySettings = qualitySettings
+  ) => {
+    const audioTrack = room.localParticipant
+      .getTrackPublication(Track.Source.Microphone)
+      ?.audioTrack;
+    if (!audioTrack) {
+      return;
+    }
+
+    await audioTrack.applyConstraints(
+      createAudioCaptureOptions(settings, supportedAudioProcessing)
+    );
+  }, [qualitySettings, room, supportedAudioProcessing]);
+
+  const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
+    setError(null);
+    if (!enabled) {
+      await room.localParticipant.setMicrophoneEnabled(false);
+      return;
+    }
+
+    const options = createAudioCaptureOptions(
+      qualitySettings,
+      supportedAudioProcessing,
+      room.getActiveDevice("audioinput")
+    );
+    await room.localParticipant.setMicrophoneEnabled(true, options);
+    try {
+      await applyAudioProcessing();
+    } catch {
+      setError("Some microphone processing options are not supported by this browser");
+    }
+  }, [applyAudioProcessing, qualitySettings, room, supportedAudioProcessing]);
+
+  const setCameraEnabled = useCallback(async (enabled: boolean) => {
+    setError(null);
+    if (!enabled) {
+      await room.localParticipant.setCameraEnabled(false);
+      return;
+    }
+
+    const options = createVideoCaptureOptions(
+      qualitySettings.videoQuality,
+      room.getActiveDevice("videoinput")
+    );
+    const existingTrack = room.localParticipant
+      .getTrackPublication(Track.Source.Camera)
+      ?.videoTrack;
+    if (existingTrack) {
+      await existingTrack.restartTrack(options);
+      await room.localParticipant.setCameraEnabled(true);
+    } else {
+      await room.localParticipant.setCameraEnabled(true, options);
+    }
+  }, [qualitySettings.videoQuality, room]);
+
+  const setAudioProcessing = useCallback(async (
+    setting: AudioProcessingSetting,
+    enabled: boolean
+  ) => {
+    const nextSettings: CallQualitySettings = {
+      ...qualitySettings,
+      audio: {
+        ...qualitySettings.audio,
+        [setting]: enabled
+      }
+    };
+    setQualitySettings(nextSettings);
+    saveCallQualitySettings(nextSettings);
+    room.options.audioCaptureDefaults = {
+      ...room.options.audioCaptureDefaults,
+      ...createAudioCaptureOptions(nextSettings, supportedAudioProcessing)
+    };
+
+    try {
+      await applyAudioProcessing(nextSettings);
+      setError(null);
+    } catch {
+      setError("That microphone processing option is not supported by this browser");
+    }
+  }, [applyAudioProcessing, qualitySettings, room, supportedAudioProcessing]);
+
+  const setVideoQuality = useCallback(async (quality: VideoQualityMode) => {
+    const nextSettings: CallQualitySettings = {
+      ...qualitySettings,
+      videoQuality: quality
+    };
+    setQualitySettings(nextSettings);
+    saveCallQualitySettings(nextSettings);
+    const options = createVideoCaptureOptions(
+      quality,
+      room.getActiveDevice("videoinput")
+    );
+    room.options.videoCaptureDefaults = {
+      ...room.options.videoCaptureDefaults,
+      ...options
+    };
+
+    const cameraPublication = room.localParticipant.getTrackPublication(
+      Track.Source.Camera
+    );
+    if (cameraPublication?.videoTrack && !cameraPublication.isMuted) {
+      try {
+        await cameraPublication.videoTrack.restartTrack(options);
+        setError(null);
+      } catch {
+        setError("The camera could not apply that quality; it may not support the requested size");
+      }
+    }
+  }, [qualitySettings, room]);
+
+  const switchInputDevice = useCallback(async (
+    kind: "audioinput" | "videoinput",
+    deviceId: string
+  ) => {
+    const switched = await room.switchActiveDevice(kind, deviceId);
+    if (!switched) {
+      throw new Error(`Could not switch ${kind}`);
+    }
+
+    if (kind === "audioinput") {
+      await applyAudioProcessing().catch(() => {
+        setError("Microphone switched, but some processing options were unavailable");
+      });
+      return;
+    }
+
+    // LiveKit preserves an active track's current constraints during a device
+    // switch, so the selected quality remains intact without a second restart.
+  }, [applyAudioProcessing, room]);
+
   const leaveCall = useCallback(async () => {
     const wasJoined = room.state === ConnectionState.Connected
       || room.state === ConnectionState.Reconnecting;
@@ -308,8 +477,17 @@ export default function CallProvider({
     error,
     mutedRemoteParticipantIds,
     listenersWhoMutedMe,
+    qualitySettings,
+    supportedAudioProcessing,
+    adaptiveStreamEnabled: true,
+    adaptiveStreamRuntimeConfigurable: false,
     joinCall,
     leaveCall,
+    setMicrophoneEnabled,
+    setCameraEnabled,
+    setAudioProcessing,
+    setVideoQuality,
+    switchInputDevice,
     toggleRemoteAudio,
     clearError: () => setError(null)
   }), [
@@ -319,7 +497,14 @@ export default function CallProvider({
     listenersWhoMutedMe,
     mutedRemoteParticipantIds,
     participantCount,
+    qualitySettings,
+    setAudioProcessing,
+    setCameraEnabled,
+    setMicrophoneEnabled,
+    setVideoQuality,
     status,
+    supportedAudioProcessing,
+    switchInputDevice,
     toggleRemoteAudio
   ]);
 

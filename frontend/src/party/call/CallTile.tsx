@@ -5,11 +5,12 @@ import {
   type PointerEvent as ReactPointerEvent
 } from "react";
 import {
+  ConnectionQuality,
   ParticipantEvent,
   Track,
   type Participant
 } from "livekit-client";
-import { Volume2, VolumeX } from "lucide-react";
+import { SignalHigh, SignalLow, SignalZero, Volume2, VolumeX } from "lucide-react";
 import CallControls from "./CallControls";
 
 type Props = {
@@ -23,6 +24,21 @@ type Props = {
 
 function participantInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() || "?";
+}
+
+function connectionQualityDisplay(quality: ConnectionQuality) {
+  switch (quality) {
+    case ConnectionQuality.Excellent:
+      return { label: "Excellent connection", Icon: SignalHigh, tone: "strong" };
+    case ConnectionQuality.Good:
+      return { label: "Good connection", Icon: SignalHigh, tone: "strong" };
+    case ConnectionQuality.Poor:
+      return { label: "Poor connection", Icon: SignalLow, tone: "weak" };
+    case ConnectionQuality.Lost:
+      return { label: "Connection lost", Icon: SignalZero, tone: "lost" };
+    default:
+      return { label: "Connection quality unknown", Icon: SignalZero, tone: "unknown" };
+  }
 }
 
 export default function CallTile({
@@ -83,6 +99,7 @@ export default function CallTile({
     participant.on(ParticipantEvent.TrackMuted, update);
     participant.on(ParticipantEvent.TrackUnmuted, update);
     participant.on(ParticipantEvent.IsSpeakingChanged, update);
+    participant.on(ParticipantEvent.ConnectionQualityChanged, update);
 
     return () => {
       participant.off(ParticipantEvent.TrackPublished, update);
@@ -92,6 +109,7 @@ export default function CallTile({
       participant.off(ParticipantEvent.TrackMuted, update);
       participant.off(ParticipantEvent.TrackUnmuted, update);
       participant.off(ParticipantEvent.IsSpeakingChanged, update);
+      participant.off(ParticipantEvent.ConnectionQualityChanged, update);
     };
   }, [participant]);
 
@@ -110,6 +128,8 @@ export default function CallTile({
   }, [cameraPublication?.isMuted, cameraTrack]);
 
   const cameraVisible = Boolean(cameraTrack && !cameraPublication?.isMuted);
+  const connectionQuality = connectionQualityDisplay(participant.connectionQuality);
+  const ConnectionQualityIcon = connectionQuality.Icon;
   const listenerMuteLabel = listenersWhoMutedMe.length === 1
     ? `${listenersWhoMutedMe[0]} cannot hear you`
     : `${listenersWhoMutedMe.length} participants cannot hear you`;
@@ -181,6 +201,15 @@ export default function CallTile({
           )}
         </span>
       )}
+
+      <span
+        className={`callConnectionQuality ${connectionQuality.tone}`}
+        role="img"
+        aria-label={connectionQuality.label}
+        title={connectionQuality.label}
+      >
+        <ConnectionQualityIcon size={13} strokeWidth={2.3} aria-hidden="true" />
+      </span>
 
       <div className="callTileCaption">
         <span title={name}>{participant.isLocal ? "You" : name}</span>

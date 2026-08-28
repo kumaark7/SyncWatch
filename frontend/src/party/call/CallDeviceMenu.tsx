@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 type Props = {
   kind: "audioinput" | "videoinput";
   anchorRef: RefObject<HTMLButtonElement | null>;
+  onSelectDevice: (kind: Props["kind"], deviceId: string) => Promise<void>;
   onClose: () => void;
   onError: (message: string) => void;
 };
@@ -38,6 +39,7 @@ function fallbackDeviceName(
 export default function CallDeviceMenu({
   kind,
   anchorRef,
+  onSelectDevice,
   onClose,
   onError
 }: Props) {
@@ -52,8 +54,7 @@ export default function CallDeviceMenu({
   }, [kind, onError]);
   const {
     devices,
-    activeDeviceId,
-    setActiveMediaDevice
+    activeDeviceId
   } = useMediaDeviceSelect({
     kind,
     requestPermissions: true,
@@ -156,7 +157,7 @@ export default function CallDeviceMenu({
               onClick={async () => {
                 setSwitchingDeviceId(device.deviceId);
                 try {
-                  await setActiveMediaDevice(device.deviceId);
+                  await onSelectDevice(kind, device.deviceId);
                   onClose();
                   anchorRef.current?.focus();
                 } catch {
