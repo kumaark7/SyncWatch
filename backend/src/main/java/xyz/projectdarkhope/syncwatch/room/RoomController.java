@@ -1,8 +1,10 @@
 package xyz.projectdarkhope.syncwatch.room;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
 
 import java.util.Map;
@@ -30,9 +32,19 @@ public class RoomController {
 
     @PostMapping("/rooms")
     public RoomResponse createRoom(
-            @RequestParam(required = false) String clientId
+            @RequestParam(required = false) String clientId,
+            @RequestParam String roomName
     ) {
-        Room room = rooms.create();
+        String cleanedRoomName = roomName == null ? "" : roomName.trim();
+        int roomNameLength = cleanedRoomName.codePointCount(0, cleanedRoomName.length());
+        if (roomNameLength < 2 || roomNameLength > 48) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Room name must be 2 to 48 characters"
+            );
+        }
+
+        Room room = rooms.create(cleanedRoomName);
 
         if (clientId != null && !clientId.isBlank()) {
             room.claimHost(clientId);

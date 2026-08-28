@@ -42,9 +42,9 @@ export default function DrivePicker({
         window.google.picker.ViewId.DOCS
       );
 
-      view.setMimeTypes(
-        "video/mp4,video/webm,video/quicktime,video/x-matroska"
-      );
+     // view.setMimeTypes(
+     //   "video/mp4,video/webm,video/quicktime,video/x-matroska"
+     // );
       view.setMode(window.google.picker.DocsViewMode.LIST);
       view.setIncludeFolders(true);
       view.setSelectFolderEnabled(false);

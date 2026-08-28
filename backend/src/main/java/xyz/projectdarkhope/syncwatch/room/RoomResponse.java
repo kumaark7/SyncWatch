@@ -2,6 +2,7 @@ package xyz.projectdarkhope.syncwatch.room;
 
 public record RoomResponse(
         String roomId,
+        String roomName,
         String fileName,
         boolean hasFile,
         boolean playing,
@@ -13,6 +14,7 @@ public record RoomResponse(
     public static RoomResponse from(Room room, String clientId) {
         return new RoomResponse(
                 room.getId(),
+                room.getName(),
                 room.getFileName(),
                 room.hasFile(),
                 room.isPlaying(),

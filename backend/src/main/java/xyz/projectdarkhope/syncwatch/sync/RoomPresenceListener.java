@@ -4,17 +4,25 @@ import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
+import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
+import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.room.Room;
+import xyz.projectdarkhope.syncwatch.room.RoomParticipant;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
+
+import java.util.List;
 
 @Component
 public class RoomPresenceListener {
     private final RoomStore rooms;
     private final SimpMessagingTemplate messaging;
+    private final ChatService chatService;
 
-    public RoomPresenceListener(RoomStore rooms, SimpMessagingTemplate messaging) {
+    public RoomPresenceListener(RoomStore rooms, SimpMessagingTemplate messaging, ChatService chatService) {
         this.rooms = rooms;
         this.messaging = messaging;
+        this.chatService = chatService;
     }
 
     @EventListener
@@ -22,7 +30,8 @@ public class RoomPresenceListener {
         String sessionId = event.getSessionId();
 
         for (Room room : rooms.all()) {
-            if (!room.removeSession(sessionId)) {
+            List<RoomParticipant> departures = room.removeSession(sessionId);
+            if (departures.isEmpty()) {
                 continue;
             }
 
@@ -30,6 +39,17 @@ public class RoomPresenceListener {
                     "/topic/room/" + room.getId(),
                     SyncEvent.participants(room)
             );
+            for (RoomParticipant participant : departures) {
+                ChatMessage leaveMessage = chatService.createPresenceMessage(
+                        room,
+                        participant,
+                        ChatMessageType.SYSTEM_LEAVE
+                );
+                messaging.convertAndSend(
+                        "/topic/rooms/" + room.getId() + "/chat",
+                        leaveMessage
+                );
+            }
         }
     }
 }
