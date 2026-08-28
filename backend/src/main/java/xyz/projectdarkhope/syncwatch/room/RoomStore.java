@@ -11,10 +11,10 @@ public class RoomStore {
     private final SecureRandom random=new SecureRandom();
     private final ConcurrentHashMap<String,Room> rooms=new ConcurrentHashMap<>();
 
-    public Room create(){
+    public Room create(String roomName){
         String id;
         do{id=newId();}while(rooms.containsKey(id));
-        Room room=new Room(id);rooms.put(id,room);return room;
+        Room room=new Room(id,roomName);rooms.put(id,room);return room;
     }
 
     public Optional<Room> find(String id){

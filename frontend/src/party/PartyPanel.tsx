@@ -15,8 +15,10 @@ type Props = {
   chatMessages: ChatMessage[];
   activeTab: PartyTab;
   unreadCount: number;
+  selfViewHidden: boolean;
   onTabChange: (tab: PartyTab) => void;
   onClearUnread: () => void;
+  onToggleSelfView: () => void;
   onSendChat: (text: string) => boolean;
   onChatError?: (message: string) => void;
   onCopyRoom: () => void;
@@ -29,8 +31,9 @@ export default function PartyPanel(props: Props) {
   const activeCount = props.activeTab === "people"
     ? props.participants.length
     : props.activeTab === "chat"
-      ? props.chatMessages.length
+      ? props.unreadCount
       : callParticipantCount;
+  const showActiveCount = props.activeTab !== "chat" || activeCount > 0;
 
   function selectTab(tab: PartyTab) {
     props.onTabChange(tab);
@@ -47,9 +50,16 @@ export default function PartyPanel(props: Props) {
           <span className="partyTitleDivider" aria-hidden="true">·</span>
           <h2>{activeTitle}</h2>
         </div>
-        <span className="participantCount" aria-label={`${activeCount} ${activeTitle.toLowerCase()} items`}>
-          {activeCount}
-        </span>
+        {showActiveCount && (
+          <span
+            className="participantCount"
+            aria-label={props.activeTab === "chat"
+              ? `${activeCount} unread messages`
+              : `${activeCount} ${activeTitle.toLowerCase()} items`}
+          >
+            {activeCount}
+          </span>
+        )}
       </div>
 
       <div
@@ -76,7 +86,10 @@ export default function PartyPanel(props: Props) {
             onError={props.onChatError}
           />
         ) : (
-          <CallPanel />
+          <CallPanel
+            selfViewHidden={props.selfViewHidden}
+            onToggleSelfView={props.onToggleSelfView}
+          />
         )}
       </div>
 

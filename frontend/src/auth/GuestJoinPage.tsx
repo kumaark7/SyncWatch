@@ -9,19 +9,28 @@ type Props = {
 };
 
 export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
+  const inviteMode = Boolean(roomId);
+  const [roomCode, setRoomCode] = useState(roomId);
+  const [roomTitle, setRoomTitle] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [roomAvailable, setRoomAvailable] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!inviteMode) {
+      setRoomAvailable(null);
+      return;
+    }
+
     let cancelled = false;
     setRoomAvailable(null);
 
     checkGuestRoom(roomId)
-      .then((available) => {
+      .then((roomInfo) => {
         if (!cancelled) {
-          setRoomAvailable(available);
+          setRoomTitle(roomInfo?.roomName ?? "");
+          setRoomAvailable(Boolean(roomInfo));
         }
       })
       .catch(() => {
@@ -33,10 +42,16 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [roomId]);
+  }, [inviteMode, roomId]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const cleanedRoomCode = roomCode.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(cleanedRoomCode)) {
+      setError("Enter a valid 6-character room ID.");
+      return;
+    }
+
     const cleanedName = displayName.trim();
     const nameLength = Array.from(cleanedName).length;
     if (nameLength < 2 || nameLength > 32) {
@@ -47,7 +62,16 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
     setLoading(true);
     setError("");
     try {
-      await onJoin(roomId, cleanedName);
+      if (!inviteMode) {
+        const roomInfo = await checkGuestRoom(cleanedRoomCode);
+        if (!roomInfo) {
+          setError("Room not found or no longer available.");
+          return;
+        }
+        setRoomTitle(roomInfo.roomName);
+      }
+
+      await onJoin(cleanedRoomCode, cleanedName);
     } catch (joinError) {
       setError(joinError instanceof Error ? joinError.message : "Could not join watch party.");
     } finally {
@@ -61,10 +85,32 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
         <div>
           <div className="brandMark">SyncWatch</div>
           <h1>Join Watch Party</h1>
-          <p>Room {roomId}</p>
+          <p>{inviteMode
+            ? roomTitle
+              ? `Room Name: ${roomTitle}`
+              : roomAvailable === null
+                ? "Checking room..."
+                : "Room name unavailable"
+            : "Enter your room ID and display name."}</p>
         </div>
 
-        {roomAvailable === false ? (
+        {!inviteMode && (
+          <label className="fieldLabel">
+            Room ID
+            <input
+              value={roomCode}
+              onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={6}
+              disabled={loading}
+              autoFocus
+            />
+          </label>
+        )}
+
+        {inviteMode && roomAvailable === false ? (
           <div className="loginError">Room not found or no longer available.</div>
         ) : (
           <label className="fieldLabel">
@@ -74,20 +120,25 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
               onChange={(event) => setDisplayName(event.target.value)}
               autoComplete="name"
               maxLength={64}
-              disabled={roomAvailable !== true || loading}
-              autoFocus
+              disabled={(inviteMode && roomAvailable !== true) || loading}
+              autoFocus={inviteMode}
             />
           </label>
         )}
 
         {error && <div className="loginError">{error}</div>}
 
-        {roomAvailable !== false && (
+        {(!inviteMode || roomAvailable !== false) && (
           <button
             className="primary loginButton"
-            disabled={roomAvailable !== true || loading || Array.from(displayName.trim()).length < 2}
+            disabled={
+              loading
+              || (inviteMode && roomAvailable !== true)
+              || (!inviteMode && !/^[A-Z0-9]{6}$/.test(roomCode.trim().toUpperCase()))
+              || Array.from(displayName.trim()).length < 2
+            }
           >
-            {roomAvailable === null
+            {inviteMode && roomAvailable === null
               ? "Checking room..."
               : loading
                 ? "Joining..."

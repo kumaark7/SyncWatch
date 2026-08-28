@@ -3,9 +3,10 @@ import type { FormEvent } from "react";
 
 type Props = {
   onLogin: (username: string, password: string) => Promise<void>;
+  onGuestJoin: () => void;
 };
 
-export default function LoginPage({ onLogin }: Props) {
+export default function LoginPage({ onLogin, onGuestJoin }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -28,6 +29,10 @@ export default function LoginPage({ onLogin }: Props) {
 
   return (
     <main className="loginShell">
+      <button type="button" className="guestJoinEntry" onClick={onGuestJoin}>
+        Guest Join
+      </button>
+
       <form className="loginCard" onSubmit={submit}>
         <div>
           <div className="brandMark">SyncWatch</div>
@@ -69,6 +74,7 @@ export default function LoginPage({ onLogin }: Props) {
         <button className="primary loginButton" disabled={loading}>
           {loading ? "Signing in..." : "Sign In"}
         </button>
+
       </form>
     </main>
   );

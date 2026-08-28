@@ -1,5 +1,5 @@
 import { useParticipants } from "@livekit/components-react";
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import CallTile from "./CallTile";
 import { useCall } from "./CallProvider";
 import useFloatingWindow from "./useFloatingWindow";
@@ -7,16 +7,62 @@ import useFloatingWindow from "./useFloatingWindow";
 type Props = {
   roomId: string;
   visible: boolean;
+  selfViewHidden: boolean;
+  onToggleSelfView: () => void;
 };
 
-export default function FloatingCallWindow({ roomId, visible }: Props) {
+export default function FloatingCallWindow({
+  roomId,
+  visible,
+  selfViewHidden,
+  onToggleSelfView
+}: Props) {
   const participants = useParticipants();
   const { status, leaveCall } = useCall();
   const [minimized, setMinimized] = useState(false);
   const floating = useFloatingWindow();
+  const visibleParticipants = selfViewHidden
+    ? participants.filter((participant) => !participant.isLocal)
+    : participants;
 
   if (!visible || status === "idle") {
     return null;
+  }
+
+  function keyboardStep(event: KeyboardEvent<HTMLElement>) {
+    return event.shiftKey ? 32 : 16;
+  }
+
+  function handleMoveKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    const step = keyboardStep(event);
+    const movement = event.key === "ArrowLeft" ? [-step, 0]
+      : event.key === "ArrowRight" ? [step, 0]
+        : event.key === "ArrowUp" ? [0, -step]
+          : event.key === "ArrowDown" ? [0, step]
+            : null;
+
+    if (movement) {
+      event.preventDefault();
+      floating.moveBy(movement[0], movement[1]);
+    }
+  }
+
+  function handleResizeKeyDown(event: KeyboardEvent<HTMLElement>) {
+    const step = keyboardStep(event);
+    const resize = event.key === "ArrowLeft" ? [-step, 0]
+      : event.key === "ArrowRight" ? [step, 0]
+        : event.key === "ArrowUp" ? [0, -step]
+          : event.key === "ArrowDown" ? [0, step]
+            : null;
+
+    if (resize) {
+      event.preventDefault();
+      floating.resizeBy(resize[0], resize[1]);
+    }
   }
 
   if (minimized) {
@@ -37,56 +83,85 @@ export default function FloatingCallWindow({ roomId, visible }: Props) {
 
   return (
     <section
-      className="floatingCallWindow"
+      className={`floatingCallWindow ${floating.resizing ? "isResizing" : ""}`}
       style={floating.style}
       aria-label={`Room ${roomId} call`}
     >
-      <header
-        className="floatingCallHeader"
+      <div
+        className="floatingCallDragGrip"
+        tabIndex={0}
+        aria-label="Move call window with arrow keys"
+        title="Drag to move call window"
         onPointerDown={floating.startDrag}
-        onPointerMove={floating.moveOperation}
-        onPointerUp={floating.endOperation}
-        onPointerCancel={floating.endOperation}
+        onLostPointerCapture={floating.cancelOperation}
+        onKeyDown={handleMoveKeyDown}
       >
-        <div>
-          <span className={`floatingCallStatusDot ${status}`} aria-hidden="true" />
-          <strong>Call</strong>
-          <span>Room {roomId}</span>
-        </div>
+        <span className="floatingCallGripMark" aria-hidden="true" />
+      </div>
+
+      <div className="floatingCallUtilities">
+        {selfViewHidden && (
+          <button
+            className="floatingShowSelf"
+            aria-label="Show my preview"
+            title="Show my preview"
+            onClick={onToggleSelfView}
+          >
+            Show self
+          </button>
+        )}
         <button
           aria-label="Minimize call"
           title="Minimize call"
-          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => setMinimized(true)}
         >
           &minus;
         </button>
-      </header>
-
-      <div
-        className="floatingCallGrid"
-        data-count={participants.length}
-      >
-        {participants.map((participant) => (
-          <CallTile
-            key={participant.identity}
-            participant={participant}
-            onLeave={participant.isLocal ? leaveCall : undefined}
-          />
-        ))}
       </div>
 
-      {!floating.mobile && (
+      {visibleParticipants.length > 0 ? (
         <div
-          className="floatingCallResizeHandle"
-          role="separator"
-          aria-label="Resize call window"
-          title="Resize call window"
-          onPointerDown={floating.startResize}
-          onPointerMove={floating.moveOperation}
-          onPointerUp={floating.endOperation}
-          onPointerCancel={floating.endOperation}
-        />
+          className="floatingCallGrid"
+          data-count={visibleParticipants.length}
+        >
+          {visibleParticipants.map((participant) => (
+            <CallTile
+              key={participant.identity}
+              participant={participant}
+              onLeave={participant.isLocal ? leaveCall : undefined}
+              onHideSelf={participant.isLocal ? onToggleSelfView : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="callSelfHiddenState floating">
+          <strong>Self preview hidden</strong>
+          <span>Call media remains connected.</span>
+        </div>
+      )}
+
+      {!floating.mobile && (
+        <>
+          <div
+            className="floatingCallResizeHandle bottomLeft"
+            role="separator"
+            tabIndex={-1}
+            aria-label="Resize call window from bottom left"
+            title="Resize call window"
+            onPointerDown={(event) => floating.startResize(event, "bottom-left")}
+            onLostPointerCapture={floating.cancelOperation}
+          />
+          <div
+            className="floatingCallResizeHandle bottomRight"
+            role="separator"
+            tabIndex={0}
+            aria-label="Resize call window"
+            title="Resize call window"
+            onPointerDown={(event) => floating.startResize(event, "bottom-right")}
+            onLostPointerCapture={floating.cancelOperation}
+            onKeyDown={handleResizeKeyDown}
+          />
+        </>
       )}
     </section>
   );

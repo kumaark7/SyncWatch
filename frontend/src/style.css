@@ -21,14 +21,25 @@
 }
 * { box-sizing: border-box; }
 
-html { min-width: 320px; }
+html {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
 
 body {
   margin: 0;
-  min-width: 320px;
+  width: 100%;
+  min-width: 0;
   background: var(--bg);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, Arial, sans-serif;
+  overflow-x: clip;
+}
+
+#root {
+  width: 100%;
+  min-width: 0;
 }
 
 button, input, select { font: inherit; }
@@ -48,6 +59,7 @@ button {
   cursor: pointer;
   white-space: nowrap;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  touch-action: manipulation;
 }
 
 button:hover:not(:disabled) {
@@ -58,6 +70,14 @@ button:hover:not(:disabled) {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 input, select {
@@ -132,6 +152,7 @@ input, select {
   min-width: 0;
   flex: 1;
   flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .brandBlock strong {
@@ -160,19 +181,39 @@ input, select {
   font-size: 15px;
 }
 
+.brandBlock > span:not(.hostPill) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brandBlock .roomTitle {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
 .brandBlock span:first-of-type {
   padding-left: 16px;
   border-left: 1px solid var(--border);
 }
 
 .topActions {
+  min-width: 0;
   justify-content: flex-end;
   flex-wrap: nowrap;
 }
 
-.topActions > button {
+.topActions > * {
   min-height: 36px;
+  height: 36px;
   padding: 0 14px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .hostPill,
@@ -199,8 +240,35 @@ input, select {
 }
 
 .connectionStatus.connected { color: var(--success); }
-.theaterToggle { min-height: 36px; }
-.userPill { text-transform: uppercase; }
+.theaterToggle,
+.fullscreenToggle { min-height: 36px; }
+.userPill {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.topActions .connectionStatus,
+.topActions .userPill {
+  border-radius: var(--radius-sm);
+  background: rgba(18, 24, 36, 0.92);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.topActions .headerLogout {
+  border-color: rgba(255, 107, 117, 0.3);
+  background: rgba(88, 25, 33, 0.26);
+  color: #ff9aa2;
+}
+
+.topActions .headerLogout:hover:not(:disabled) {
+  border-color: rgba(255, 107, 117, 0.52);
+  background: rgba(112, 31, 41, 0.42);
+  color: #ffc1c6;
+}
 
 .homeShell .topBar,
 .homePanel {
@@ -412,12 +480,8 @@ input, select {
 .driveIcon {
   width: 38px;
   height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #1f6feb, #20c997 50%, #facc15);
-  color: #fff;
-  font-size: 14px;
+  display: block;
+  object-fit: contain;
 }
 
 .mediaDrive strong,
@@ -475,8 +539,18 @@ input, select {
 .partyPanelTitle {
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
+}
+
+.partyPanelTitle .eyebrow,
+.partyPanelHeader h2 {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
 }
 
 .partyTitleDivider {
@@ -486,9 +560,6 @@ input, select {
 .partyPanelHeader h2 {
   margin: 0;
   color: #fff;
-  font-size: 14px;
-  font-weight: 750;
-  line-height: 1;
 }
 
 .participantCount {
@@ -646,6 +717,28 @@ input, select {
   flex-direction: column;
   gap: 10px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 162, 255, 0.42) transparent;
+}
+
+.chatMessages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chatMessages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chatMessages::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(125, 162, 255, 0.38);
+  background-clip: padding-box;
+}
+
+.chatMessages::-webkit-scrollbar-thumb:hover {
+  background: rgba(125, 162, 255, 0.62);
+  background-clip: padding-box;
 }
 
 .chatEmpty {
@@ -655,52 +748,99 @@ input, select {
   padding: 24px 8px;
 }
 
-.chatMessage {
-  max-width: 92%;
-  display: grid;
-  gap: 5px;
-  padding: 10px 11px;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: rgba(16, 23, 36, 0.72);
-}
-
-.chatMessage.own {
-  align-self: end;
-  background: rgba(79, 124, 255, 0.13);
-  border-color: rgba(125, 162, 255, 0.28);
-}
-
-.chatMessageHeader {
+.chatMessageRow {
+  width: 100%;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: flex-end;
+  gap: 7px;
 }
 
-.chatMessageHeader strong {
+.chatMessageRow.own {
+  justify-content: flex-end;
+}
+
+.chatMessageAvatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(125, 162, 255, 0.34);
+  border-radius: 50%;
+  background: #17243a;
+  color: #e8efff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chatMessageRow.own .chatMessageAvatar {
+  border-color: rgba(74, 222, 128, 0.38);
+  background: #163126;
+  color: #c9f9da;
+}
+
+.chatMessageGroup {
+  max-width: calc(88% - 37px);
+  display: grid;
+  gap: 3px;
+}
+
+.chatMessageRow.own .chatMessageGroup {
+  justify-items: end;
+}
+
+.chatMessageBubble {
   min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 15px 15px 15px 5px;
+  background: rgba(36, 62, 80, 0.9);
+  cursor: pointer;
+}
+
+.chatMessageBubble:focus-visible,
+.chatSystemMessage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chatMessageRow.own .chatMessageBubble {
+  border-color: rgba(74, 222, 128, 0.28);
+  border-radius: 15px 15px 5px 15px;
+  background: rgba(28, 104, 70, 0.82);
+}
+
+.chatMessageBubble strong {
+  display: block;
+  min-width: 0;
+  margin-bottom: 3px;
   overflow: hidden;
   color: #fff;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chatMessageHeader time {
-  flex: 0 0 auto;
+.chatMessageGroup > time {
   color: var(--muted-2);
-  font-size: 11px;
+  font-size: 9px;
+  line-height: 1;
 }
 
-.chatMessage p {
+.chatMessageBubble p {
   margin: 0;
-  color: #dce4f2;
-  font-size: 14px;
+  color: #f2f6fb;
+  font-size: 13px;
   line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.chatMessageBubble p + p {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .chatSystemMessage {
@@ -715,6 +855,7 @@ input, select {
   font-size: 12px;
   line-height: 1.35;
   text-align: center;
+  cursor: pointer;
 }
 
 .chatSystemMessage span {
@@ -808,6 +949,26 @@ input, select {
   overflow: hidden;
 }
 
+.callPanelToolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.callSelfToggle {
+  min-height: 30px;
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.callSelfToggle[aria-pressed="true"] {
+  border-color: rgba(125, 162, 255, 0.38);
+  color: var(--text);
+}
+
 .callConnectionState {
   display: inline-flex;
   align-items: center;
@@ -874,6 +1035,28 @@ input, select {
   align-content: start;
   padding-right: 3px;
   overflow-y: auto;
+}
+
+.callSelfHiddenState {
+  min-height: 0;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  padding: 24px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-align: center;
+}
+
+.callSelfHiddenState strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.callSelfHiddenState span {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .callTile {
@@ -950,6 +1133,13 @@ input, select {
   white-space: nowrap;
 }
 
+.callTile.local .callTileCaption {
+  opacity: 0;
+  transform: translateY(5px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
 .callMicState {
   flex: 0 0 auto;
   color: var(--muted);
@@ -974,7 +1164,7 @@ input, select {
 
 .callControls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -990,6 +1180,15 @@ input, select {
   font-size: 11px;
 }
 
+.callControls .callControlIcon {
+  padding: 0;
+}
+
+.callControlIcon svg {
+  display: block;
+  pointer-events: none;
+}
+
 .callControls button.active {
   border-color: rgba(125, 162, 255, 0.45);
   background: rgba(79, 124, 255, 0.16);
@@ -1003,16 +1202,27 @@ input, select {
 
 .callTile.local:focus-within .callControlsWrap,
 .callTile.local.controlsVisible .callControlsWrap,
+.callTile.local:focus-within .callTileCaption,
+.callTile.local.controlsVisible .callTileCaption,
 .callControlsWrap.hasError {
   opacity: 1;
   transform: translateY(0);
+}
+
+.callTile.local:focus-within .callControlsWrap,
+.callTile.local.controlsVisible .callControlsWrap,
+.callControlsWrap.hasError {
   pointer-events: auto;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .callTile.local:hover .callControlsWrap {
+  .callTile.local:hover .callControlsWrap,
+  .callTile.local:hover .callTileCaption {
     opacity: 1;
     transform: translateY(0);
+  }
+
+  .callTile.local:hover .callControlsWrap {
     pointer-events: auto;
   }
 }
@@ -1026,8 +1236,8 @@ input, select {
 }
 .roomCard {
   display: grid;
-  gap: 12px;
-  padding-top: 18px;
+  gap: 8px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
@@ -1037,16 +1247,58 @@ input, select {
 
 .roomCodeRow strong {
   color: #fff;
-  font-size: 22px;
+  font-size: 18px;
+  line-height: 1;
   letter-spacing: 0.04em;
+}
+
+.roomCodeRow .compactButton {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 
 .inviteButton {
   width: 100%;
-  min-height: 46px;
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
 }
 
-/* Theater mode */
+/* Theater and immersive fullscreen */
+.appShell.watchShell.theater {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.appShell.watchShell.fullscreenMode {
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.appShell:fullscreen {
+  width: 100%;
+  height: 100dvh;
+  background: var(--bg);
+}
+
+.fullscreenMode .topBar {
+  display: none;
+}
+
+.fullscreenMode .watchLayout,
+.fullscreenMode .watchColumn {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
 .theater .watchLayout,
 .fullscreenMode .watchLayout {
   grid-template-columns: minmax(0, 1fr);
@@ -1069,6 +1321,12 @@ input, select {
   place-items: center;
   padding: 0;
   border-radius: 10px;
+}
+
+.fullscreenMode .playerSurface,
+.fullscreenMode .videoFrame {
+  border: 0;
+  border-radius: 0;
 }
 
 .theater .videoFrame,
@@ -1103,53 +1361,103 @@ input, select {
 }
 
 .floatingCallWindow {
-  min-width: 220px;
-  min-height: 140px;
+  min-width: 180px;
+  min-height: 110px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(125, 162, 255, 0.32);
   border-radius: 12px;
   background: rgba(8, 12, 20, 0.96);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.48);
-  container: floating-call / inline-size;
+  container: floating-call / size;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
-.floatingCallHeader {
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 6px 5px 10px;
-  border-bottom: 1px solid var(--border-soft);
-  background: rgba(13, 18, 28, 0.96);
-  cursor: move;
+.floatingCallWindow.isResizing {
+  border-color: rgba(125, 162, 255, 0.72);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(125, 162, 255, 0.18);
+  user-select: none;
+}
+
+.floatingCallDragGrip {
+  position: absolute;
+  top: 0;
+  right: 44px;
+  left: 44px;
+  z-index: 5;
+  height: 28px;
+  display: grid;
+  place-items: start center;
+  cursor: grab;
   touch-action: none;
   user-select: none;
 }
 
-.floatingCallHeader > div {
-  min-width: 0;
+.floatingCallDragGrip:active {
+  cursor: grabbing;
+}
+
+.floatingCallGripMark {
+  width: 34px;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.42);
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+
+.floatingCallWindow:hover .floatingCallGripMark,
+.floatingCallDragGrip:focus-visible .floatingCallGripMark {
+  opacity: 1;
+}
+
+.floatingCallDragGrip:focus-visible,
+.floatingCallResizeHandle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.floatingCallUtilities {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 7;
   display: flex;
   align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 11px;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 140ms ease, transform 140ms ease;
 }
 
-.floatingCallHeader strong {
-  color: var(--text);
-  font-size: 12px;
+.floatingCallWindow:hover .floatingCallUtilities,
+.floatingCallWindow:focus-within .floatingCallUtilities {
+  opacity: 1;
+  transform: translateY(0);
 }
 
-.floatingCallHeader button {
+.floatingCallUtilities button {
   width: 30px;
   min-width: 30px;
-  min-height: 28px;
-  height: 28px;
+  min-height: 30px;
+  height: 30px;
   padding: 0;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(7, 10, 16, 0.82);
   font-size: 18px;
+  backdrop-filter: blur(6px);
+}
+
+.floatingCallUtilities .floatingShowSelf {
+  width: auto;
+  min-width: auto;
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 10px;
 }
 
 .floatingCallStatusDot {
@@ -1167,19 +1475,32 @@ input, select {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-auto-rows: minmax(96px, 1fr);
-  gap: 6px;
-  padding: 6px;
+  grid-auto-rows: minmax(88px, 1fr);
+  gap: 4px;
+  padding: 3px;
   overflow: auto;
   overscroll-behavior: contain;
 }
 
 .floatingCallGrid .callTile {
-  min-height: 96px;
+  min-height: 0;
+  border-radius: 9px;
 }
 
-@container floating-call (min-width: 330px) {
-  .floatingCallGrid[data-count="2"],
+.floatingCallGrid[data-count="1"],
+.floatingCallGrid[data-count="2"],
+.floatingCallGrid[data-count="3"],
+.floatingCallGrid[data-count="4"],
+.floatingCallGrid[data-count="5"],
+.floatingCallGrid[data-count="6"] {
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.callSelfHiddenState.floating {
+  margin: 6px;
+}
+
+@container floating-call (min-width: 280px) {
   .floatingCallGrid[data-count="3"],
   .floatingCallGrid[data-count="4"],
   .floatingCallGrid[data-count="5"],
@@ -1188,33 +1509,70 @@ input, select {
   }
 }
 
-@container floating-call (min-width: 480px) {
+@container floating-call (min-width: 360px) {
+  .floatingCallGrid[data-count="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container floating-call (min-width: 540px) {
   .floatingCallGrid[data-count="5"],
   .floatingCallGrid[data-count="6"] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
+@container floating-call (max-width: 239px) {
+  .floatingCallGrid .callControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .floatingCallResizeHandle {
   position: absolute;
-  right: 0;
   bottom: 0;
-  z-index: 5;
-  width: 22px;
-  height: 22px;
-  cursor: nwse-resize;
+  z-index: 12;
+  width: 36px;
+  height: 36px;
   touch-action: none;
+  pointer-events: auto;
+  opacity: 0.48;
+  transition: opacity 140ms ease;
+}
+
+.floatingCallResizeHandle.bottomRight {
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.floatingCallResizeHandle.bottomLeft {
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.floatingCallResizeHandle:hover,
+.floatingCallResizeHandle:focus-visible {
+  opacity: 1;
 }
 
 .floatingCallResizeHandle::after {
   content: "";
   position: absolute;
-  right: 5px;
-  bottom: 5px;
-  width: 8px;
-  height: 8px;
+  bottom: 6px;
+  width: 13px;
+  height: 13px;
+}
+
+.floatingCallResizeHandle.bottomRight::after {
+  right: 6px;
   border-right: 2px solid rgba(255, 255, 255, 0.58);
   border-bottom: 2px solid rgba(255, 255, 255, 0.58);
+}
+
+.floatingCallResizeHandle.bottomLeft::after {
+  left: 6px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.58);
+  border-left: 2px solid rgba(255, 255, 255, 0.58);
 }
 
 .floatingCallMinimized {
@@ -1239,6 +1597,12 @@ input, select {
   display: grid;
   gap: 8px;
   pointer-events: none;
+}
+
+.theater .chatToastStack,
+.fullscreenMode .chatToastStack {
+  right: auto;
+  left: 16px;
 }
 
 .chatToast {
@@ -1349,6 +1713,7 @@ button.chatToastOpen:hover:not(:disabled) {
 }
 
 .loginShell {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
@@ -1356,6 +1721,13 @@ button.chatToastOpen:hover:not(:disabled) {
   background:
     radial-gradient(circle at top, rgba(79, 124, 255, 0.16), transparent 34rem),
     var(--bg);
+}
+
+.guestJoinEntry {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  min-width: 112px;
 }
 
 .loginCard {
@@ -1371,6 +1743,14 @@ button.chatToastOpen:hover:not(:disabled) {
 .ghostButton { background: #101725; }
 .loginButton { width: 100%; }
 .loginError { color: #fecaca; font-size: 14px; }
+
+@media (max-width: 430px) {
+  .guestJoinEntry {
+    top: 12px;
+    right: 12px;
+    min-height: 44px;
+  }
+}
 
 .toast {
   position: fixed;
@@ -1482,9 +1862,28 @@ button.chatToastOpen:hover:not(:disabled) {
     grid-column: 1;
     grid-row: 2;
     min-height: 0;
-    align-content: start;
-    overflow-y: auto;
-    overflow-x: hidden;
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-content: stretch;
+    overflow: hidden;
+  }
+
+  .watchShell .playerSurface {
+    min-height: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .watchShell .videoFrame,
+  .watchShell .video,
+  .watchShell .videoPlaceholder {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .watchShell .video {
+    aspect-ratio: auto;
+    object-fit: contain;
   }
 
   .watchShell .partyPanel {
@@ -1497,16 +1896,14 @@ button.chatToastOpen:hover:not(:disabled) {
     max-height: none;
   }
 
-  .watchShell.theater,
-  .watchShell.fullscreenMode {
+  .watchShell.theater {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 8px;
     padding: 8px;
   }
 
-  .watchShell.theater .topBar,
-  .watchShell.fullscreenMode .topBar {
+  .watchShell.theater .topBar {
     min-height: 48px;
     padding: 5px 10px;
     border-radius: 10px;
@@ -1556,10 +1953,45 @@ button.chatToastOpen:hover:not(:disabled) {
 
   .partyPanel {
     position: static;
-    height: clamp(520px, 72dvh, 680px);
-    min-height: 520px;
+    height: clamp(480px, 72dvh, 680px);
+    min-height: 0;
     max-height: none;
     overflow: hidden;
+  }
+
+  .watchShell.theater {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+    overflow: hidden;
+  }
+
+  .watchShell.theater .topBar {
+    width: 100%;
+    margin: 0;
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .watchShell.theater .topActions {
+    width: auto;
+    margin-left: auto;
+    flex-wrap: nowrap;
+  }
+
+  .watchShell.theater .connectionStatus,
+  .watchShell.theater .userPill {
+    display: none;
+  }
+
+  .watchShell.theater .watchLayout,
+  .watchShell.fullscreenMode .watchLayout,
+  .watchShell.theater .watchColumn,
+  .watchShell.fullscreenMode .watchColumn {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
   }
 
   .callTilesCount1 {
@@ -1580,14 +2012,26 @@ button.chatToastOpen:hover:not(:disabled) {
 
   .appShell { padding: 10px; }
 
-  .brandBlock,
   .mediaInfo {
     align-items: stretch;
     flex-direction: column;
   }
 
   .brandBlock {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: 8px;
+    overflow: visible;
+  }
+
+  .brandBlock strong {
+    grid-column: 1 / -1;
+  }
+
+  .brandBlock .hostPill {
+    justify-self: end;
   }
 
   .brandBlock span:first-of-type {
@@ -1618,6 +2062,60 @@ button.chatToastOpen:hover:not(:disabled) {
     min-width: 0;
   }
 
+  .topActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .topActions > *,
+  .topActions > button {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 44px;
+  }
+
+  .watchShell.theater .topBar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .watchShell.theater .brandBlock {
+    width: auto;
+    display: flex;
+    flex-wrap: nowrap;
+  }
+
+  .watchShell.theater .brandBlock > span,
+  .watchShell.theater .brandBlock .hostPill {
+    display: none;
+  }
+
+  .watchShell.theater .topActions {
+    width: auto;
+    display: flex;
+    gap: 6px;
+  }
+
+  .watchShell.theater .topActions > *,
+  .watchShell.theater .topActions > button {
+    width: auto;
+  }
+
+  .connectionStatus,
+  .userPill {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
   .playerSurface,
   .mediaInfo,
   .partyPanel,
@@ -1627,8 +2125,18 @@ button.chatToastOpen:hover:not(:disabled) {
   }
 
   .partyPanel {
-    height: clamp(520px, 72dvh, 640px);
+    height: clamp(460px, 76dvh, 640px);
     padding: 12px;
+  }
+
+  .callSelfToggle {
+    min-height: 44px;
+  }
+
+  .partyTabs button {
+    min-height: 40px;
+    padding: 0 8px;
+    font-size: 14px;
   }
 
   .callControls button {
@@ -1641,29 +2149,34 @@ button.chatToastOpen:hover:not(:disabled) {
 
   .floatingCallWindow {
     min-width: 0;
-    min-height: 180px;
-    max-width: calc(100vw - 24px);
-    max-height: min(58dvh, 440px);
+    min-height: 110px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
   }
 
-  .floatingCallHeader {
-    min-height: 44px;
-    padding-left: 12px;
-  }
-
-  .floatingCallHeader button {
-    width: 40px;
-    min-width: 40px;
-    min-height: 40px;
+  .floatingCallDragGrip {
+    right: 52px;
+    left: 8px;
     height: 40px;
   }
 
-  .floatingCallGrid[data-count="2"],
-  .floatingCallGrid[data-count="3"],
-  .floatingCallGrid[data-count="4"],
-  .floatingCallGrid[data-count="5"],
-  .floatingCallGrid[data-count="6"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .floatingCallUtilities {
+    opacity: 1;
+    transform: none;
+  }
+
+  .floatingCallUtilities button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .floatingCallUtilities .floatingShowSelf {
+    width: auto;
+    min-width: auto;
+    min-height: 44px;
+    padding: 0 10px;
   }
 
   .chatToastStack {
@@ -1673,14 +2186,27 @@ button.chatToastOpen:hover:not(:disabled) {
     width: auto;
   }
 
-  .theater.appShell,
-  .fullscreenMode.appShell {
+  .theater .chatToastStack,
+  .fullscreenMode .chatToastStack {
+    top: calc(env(safe-area-inset-top, 0px) + 208px);
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .chatToastClose {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .theater.appShell {
     min-height: 100dvh;
     padding: 6px;
   }
 
-  .theater .topBar,
-  .fullscreenMode .topBar {
+  .theater .topBar {
     margin-bottom: 6px;
   }
 
@@ -1709,8 +2235,23 @@ button.chatToastOpen:hover:not(:disabled) {
   }
 }
 
+@media (max-width: 430px) {
+  .watchShell.theater .fullscreenToggle {
+    display: none;
+  }
+
+  .floatingCallGrid[data-count="2"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chatToast {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .callTile,
+  .callTileCaption,
   .callControlsWrap,
   .chatToast {
     transition: none;

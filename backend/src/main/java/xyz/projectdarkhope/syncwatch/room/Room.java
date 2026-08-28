@@ -15,6 +15,7 @@ public class Room {
     ) {}
 
     private final String id;
+    private final String name;
     private volatile String fileId;
     private volatile String fileName;
     private volatile String accessToken;
@@ -26,12 +27,14 @@ public class Room {
     private final Map<String, String> participantNames = new HashMap<>();
     private final Map<String, Set<String>> sessionsByClientId = new HashMap<>();
 
-    public Room(String id) {
+    public Room(String id, String name) {
         this.id = id;
+        this.name = name;
         this.updatedAt = System.currentTimeMillis();
     }
 
     public String getId() { return id; }
+    public String getName() { return name; }
     public String getFileId() { return fileId; }
     public void setFileId(String v) { fileId = v; }
     public String getFileName() { return fileName; }

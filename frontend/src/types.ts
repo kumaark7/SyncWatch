@@ -1,5 +1,6 @@
 export type RoomState = {
   roomId: string;
+  roomName: string;
   fileName: string | null;
   hasFile: boolean;
   playing: boolean;

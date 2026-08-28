@@ -1,12 +1,14 @@
 import { useLocalParticipant } from "@livekit/components-react";
+import { EyeOff, Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
 import { useState } from "react";
 
 type Props = {
   onLeave: () => Promise<void>;
+  onHideSelf: () => void;
   onInteract: () => void;
 };
 
-export default function CallControls({ onLeave, onInteract }: Props) {
+export default function CallControls({ onLeave, onHideSelf, onInteract }: Props) {
   const {
     localParticipant,
     isMicrophoneEnabled,
@@ -54,7 +56,7 @@ export default function CallControls({ onLeave, onInteract }: Props) {
       {error && <p className="callError" role="alert">{error}</p>}
       <div className="callControls" aria-label="Call controls">
         <button
-          className={isMicrophoneEnabled ? "active" : ""}
+          className={`callControlIcon ${isMicrophoneEnabled ? "active" : ""}`}
           disabled={busyControl !== null}
           aria-label={isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"}
           aria-pressed={isMicrophoneEnabled}
@@ -63,10 +65,12 @@ export default function CallControls({ onLeave, onInteract }: Props) {
           onPointerDown={onInteract}
           onClick={() => void toggleMicrophone()}
         >
-          {isMicrophoneEnabled ? "Mute" : "Mic"}
+          {isMicrophoneEnabled
+            ? <Mic size={17} strokeWidth={2.2} aria-hidden="true" />
+            : <MicOff size={17} strokeWidth={2.2} aria-hidden="true" />}
         </button>
         <button
-          className={isCameraEnabled ? "active" : ""}
+          className={`callControlIcon ${isCameraEnabled ? "active" : ""}`}
           disabled={busyControl !== null}
           aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
           aria-pressed={isCameraEnabled}
@@ -75,10 +79,22 @@ export default function CallControls({ onLeave, onInteract }: Props) {
           onPointerDown={onInteract}
           onClick={() => void toggleCamera()}
         >
-          {isCameraEnabled ? "Cam off" : "Camera"}
+          {isCameraEnabled
+            ? <Video size={17} strokeWidth={2.2} aria-hidden="true" />
+            : <VideoOff size={17} strokeWidth={2.2} aria-hidden="true" />}
         </button>
         <button
-          className="callLeaveButton"
+          className="callControlIcon"
+          aria-label="Hide my preview"
+          title="Hide my preview"
+          onFocus={onInteract}
+          onPointerDown={onInteract}
+          onClick={onHideSelf}
+        >
+          <EyeOff size={17} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+        <button
+          className="callControlIcon callLeaveButton"
           disabled={busyControl !== null}
           aria-label="Leave call"
           title="Leave call"
@@ -86,7 +102,7 @@ export default function CallControls({ onLeave, onInteract }: Props) {
           onPointerDown={onInteract}
           onClick={() => void leave()}
         >
-          Leave
+          <PhoneOff size={17} strokeWidth={2.2} aria-hidden="true" />
         </button>
       </div>
     </div>

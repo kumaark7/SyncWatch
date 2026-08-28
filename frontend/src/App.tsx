@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
 import ConnectionStatus from "./components/ConnectionStatus";
+import FullscreenToggle from "./components/FullscreenToggle";
 import MediaInfo from "./components/MediaInfo";
 import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
@@ -58,6 +59,12 @@ function AppContent() {
   const auth = useAuth();
   const inviteRoomId = roomFromUrl();
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showGuestJoin, setShowGuestJoin] = useState(false);
+
+  async function joinGuest(roomId: string, displayName: string) {
+    await auth.joinGuest(roomId, displayName);
+    window.history.replaceState({}, "", `/room/${roomId}`);
+  }
 
   if (auth.loading) {
     return (
@@ -72,13 +79,34 @@ function AppContent() {
       return (
         <GuestJoinPage
           roomId={inviteRoomId}
-          onJoin={auth.joinGuest}
+          onJoin={joinGuest}
           onAdminLogin={() => setShowAdminLogin(true)}
         />
       );
     }
 
-    return <LoginPage onLogin={auth.signIn} />;
+    if (showGuestJoin && !showAdminLogin) {
+      return (
+        <GuestJoinPage
+          roomId=""
+          onJoin={joinGuest}
+          onAdminLogin={() => {
+            setShowGuestJoin(false);
+            setShowAdminLogin(true);
+          }}
+        />
+      );
+    }
+
+    return (
+      <LoginPage
+        onLogin={auth.signIn}
+        onGuestJoin={() => {
+          setShowAdminLogin(false);
+          setShowGuestJoin(true);
+        }}
+      />
+    );
   }
 
   return (
@@ -119,6 +147,8 @@ function AuthenticatedApp({
     () => initialDisplayName ?? sessionStorage.getItem(NAME_TAG_STORAGE_KEY) ?? ""
   );
 
+  const [roomName, setRoomName] = useState("");
+
   const [joinedNameTag, setJoinedNameTag] = useState(
     () => initialDisplayName?.trim() ?? ""
   );
@@ -140,6 +170,9 @@ function AuthenticatedApp({
 
   const [chatUnreadCount, setChatUnreadCount] =
     useState(0);
+
+  const [selfViewHidden, setSelfViewHidden] =
+    useState(false);
 
   const appShellRef = useRef<HTMLElement>(null);
   const lastUnreadMessageIdRef = useRef<string | null>(null);
@@ -203,10 +236,12 @@ function AuthenticatedApp({
     lastUnreadMessageIdRef.current = null;
     setChatUnreadCount(0);
     setPartyTab("people");
+    setSelfViewHidden(false);
   }, [roomId]);
 
   useEffect(() => {
     if (!lastChatMessage
+        || lastChatMessage.type !== "USER"
         || lastChatMessage.senderId === clientId
         || lastUnreadMessageIdRef.current === lastChatMessage.id) {
       return;
@@ -349,12 +384,19 @@ function AuthenticatedApp({
   }, [room]);
 
   async function createRoom() {
+    const cleanedRoomName = roomName.trim();
+    const roomNameLength = Array.from(cleanedRoomName).length;
+    if (roomNameLength < 2 || roomNameLength > 48) {
+      alert("Room name must be 2 to 48 characters.");
+      return;
+    }
+
     if (!saveNameTag()) {
       return;
     }
 
     const response = await fetch(
-      `${API_URL}/api/rooms?clientId=${encodeURIComponent(clientId)}`,
+      `${API_URL}/api/rooms?clientId=${encodeURIComponent(clientId)}&roomName=${encodeURIComponent(cleanedRoomName)}`,
       {
         method: "POST",
         credentials: "include"
@@ -368,6 +410,7 @@ function AuthenticatedApp({
 
     const data = await response.json();
     history.pushState({}, "", `/room/${data.roomId}`);
+    setRoomName(cleanedRoomName);
     setRoomId(data.roomId);
     setJoinCode(data.roomId);
     setRoom(data);
@@ -568,10 +611,37 @@ function AuthenticatedApp({
 
   async function logout() {
     await onLogout();
+    window.history.replaceState({}, "", "/");
     setRoom(null);
     setRoomId("");
     setGoogleConnection(null);
     setTheaterMode(false);
+  }
+
+  async function toggleTheaterMode() {
+    if (theaterMode && fullscreenCanHostOverlay) {
+      await document.exitFullscreen().catch(() => undefined);
+    }
+
+    setTheaterMode((enabled) => !enabled);
+  }
+
+  async function toggleContainerFullscreen() {
+    try {
+      if (fullscreenCanHostOverlay) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      if (!appShellRef.current?.requestFullscreen) {
+        showToast("Fullscreen is not available in this browser");
+        return;
+      }
+
+      await appShellRef.current.requestFullscreen();
+    } catch {
+      showToast("Could not enter fullscreen");
+    }
   }
 
   const canManageGoogle = Boolean(room?.isHost);
@@ -607,12 +677,16 @@ function AuthenticatedApp({
   return (
     <main
       ref={appShellRef}
-      className={`appShell ${theaterMode ? "theater" : ""} ${fullscreenActive ? "fullscreenMode" : ""} ${!roomId ? "homeShell" : ""} ${hasWatchLayout ? "watchShell" : ""}`}
+      className={`appShell ${theaterMode ? "theater" : ""} ${fullscreenCanHostOverlay ? "fullscreenMode" : ""} ${!roomId ? "homeShell" : ""} ${hasWatchLayout ? "watchShell" : ""}`}
     >
       <header className="topBar">
         <div className="brandBlock">
           <strong>SyncWatch</strong>
-          {roomId && <span>Room {roomId}</span>}
+          {roomId && (
+            <span className="roomTitle" title={`Room code: ${roomId}`}>
+              {room?.roomName || roomName || "Watch Party"}
+            </span>
+          )}
           {room?.isHost && <span className="hostPill">Host</span>}
         </div>
 
@@ -621,11 +695,17 @@ function AuthenticatedApp({
           {room?.hasFile && (
             <TheaterToggle
               enabled={theaterMode}
-              onToggle={() => setTheaterMode((enabled) => !enabled)}
+              onToggle={() => void toggleTheaterMode()}
+            />
+          )}
+          {room?.hasFile && theaterMode && (
+            <FullscreenToggle
+              active={fullscreenCanHostOverlay}
+              onToggle={() => void toggleContainerFullscreen()}
             />
           )}
           <span className="userPill">{username}</span>
-          <button onClick={() => void logout()}>Logout</button>
+          <button className="headerLogout" onClick={() => void logout()}>Logout</button>
         </div>
       </header>
 
@@ -639,6 +719,15 @@ function AuthenticatedApp({
 
           <div className="roomEntryCard">
             <input
+              value={roomName}
+              onChange={(event) => setRoomName(event.target.value)}
+              placeholder="Room name"
+              maxLength={48}
+              aria-label="Room name"
+              autoFocus
+            />
+
+            <input
               className="nameTagInput"
               value={nameTag}
               onChange={(event) => setNameTag(event.target.value)}
@@ -650,21 +739,6 @@ function AuthenticatedApp({
             <button className="primary" onClick={() => void createRoom()}>
               Create Room
             </button>
-
-            <div className="join">
-              <input
-                value={joinCode}
-                onChange={(event) => setJoinCode(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    void joinRoom();
-                  }
-                }}
-                placeholder="Room code"
-                maxLength={6}
-              />
-              <button onClick={() => void joinRoom()}>Join</button>
-            </div>
           </div>
         </section>
       ) : !joinedNameTag ? (
@@ -725,7 +799,13 @@ function AuthenticatedApp({
 
                 {!room.hasFile && googleActions && (
                   <div className="emptyPlayerAction">
-                    {googleActions}
+                    {googleConnection ? (
+                      <DrivePicker
+                        disabled={!googleReady}
+                        getAccessToken={getValidGoogleAccessToken}
+                        onSelected={selectFile}
+                      />
+                    ) : googleActions}
                   </div>
                 )}
               </section>
@@ -747,8 +827,10 @@ function AuthenticatedApp({
                 chatMessages={chatMessages}
                 activeTab={partyTab}
                 unreadCount={chatUnreadCount}
+                selfViewHidden={selfViewHidden}
                 onTabChange={setPartyTab}
                 onClearUnread={() => setChatUnreadCount(0)}
+                onToggleSelfView={() => setSelfViewHidden((hidden) => !hidden)}
                 onSendChat={sendChatMessage}
                 onChatError={showToast}
                 onCopyRoom={() => void copyRoomCode()}
@@ -760,6 +842,8 @@ function AuthenticatedApp({
           <FloatingCallWindow
             roomId={roomId}
             visible={theaterMode || fullscreenCanHostOverlay}
+            selfViewHidden={selfViewHidden}
+            onToggleSelfView={() => setSelfViewHidden((hidden) => !hidden)}
           />
 
           <ChatToastStack

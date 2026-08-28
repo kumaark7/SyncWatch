@@ -78,7 +78,10 @@ public class AuthController {
     @GetMapping("/guest-room/{roomId}")
     public ResponseEntity<?> guestRoom(@org.springframework.web.bind.annotation.PathVariable String roomId) {
         return rooms.find(roomId)
-                .<ResponseEntity<?>>map(room -> ResponseEntity.ok(Map.of("roomId", room.getId())))
+                .<ResponseEntity<?>>map(room -> ResponseEntity.ok(Map.of(
+                        "roomId", room.getId(),
+                        "roomName", room.getName()
+                )))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 

@@ -14,13 +14,14 @@ import CallControls from "./CallControls";
 type Props = {
   participant: Participant;
   onLeave?: () => Promise<void>;
+  onHideSelf?: () => void;
 };
 
 function participantInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() || "?";
 }
 
-export default function CallTile({ participant, onLeave }: Props) {
+export default function CallTile({ participant, onLeave, onHideSelf }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsTimerRef = useRef<number | null>(null);
   const [controlsVisible, setControlsVisible] = useState(false);
@@ -125,8 +126,12 @@ export default function CallTile({ participant, onLeave }: Props) {
         </div>
       )}
 
-      {participant.isLocal && onLeave && (
-        <CallControls onLeave={onLeave} onInteract={revealControls} />
+      {participant.isLocal && onLeave && onHideSelf && (
+        <CallControls
+          onLeave={onLeave}
+          onHideSelf={onHideSelf}
+          onInteract={revealControls}
+        />
       )}
 
       <div className="callTileCaption">

@@ -9,6 +9,11 @@ export type AuthSession = {
   clientId: string | null;
 };
 
+export type GuestRoomInfo = {
+  roomId: string;
+  roomName: string;
+};
+
 export async function getAuthSession() {
   const response = await fetch(`${API_URL}/api/auth/session`, {
     credentials: "include"
@@ -64,7 +69,11 @@ export async function checkGuestRoom(roomId: string) {
     { credentials: "include" }
   );
 
-  return response.ok;
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json() as Promise<GuestRoomInfo>;
 }
 
 export async function joinAsGuest(roomId: string, displayName: string) {

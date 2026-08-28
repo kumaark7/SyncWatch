@@ -12,12 +12,14 @@ export default function MediaInfo(props: Props) {
     <section className="mediaInfo">
       <div className="mediaPrimary">
         <div className="eyebrow">Now playing</div>
-        <h2>{props.fileName || "No video selected"}</h2>
+        <h2 title={props.fileName || "No video selected"}>
+          {props.fileName || "No video selected"}
+        </h2>
         <p>{props.fileName ? "Ready in this room" : "Select a video to get started"}</p>
       </div>
 
       <div className="mediaDrive">
-        <span className="driveIcon" aria-hidden="true">▲</span>
+        <img className="driveIcon" src="/google-drive.png" alt="" aria-hidden="true" />
         <span>
           <strong>Google Drive</strong>
           <span className={props.googleConnected ? "driveState connected" : "driveState"}>
