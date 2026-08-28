@@ -18,7 +18,13 @@ export default function FloatingCallWindow({
   onToggleSelfView
 }: Props) {
   const participants = useParticipants();
-  const { status, leaveCall } = useCall();
+  const {
+    status,
+    leaveCall,
+    listenersWhoMutedMe,
+    mutedRemoteParticipantIds,
+    toggleRemoteAudio
+  } = useCall();
   const [minimized, setMinimized] = useState(false);
   const floating = useFloatingWindow();
   const visibleParticipants = selfViewHidden
@@ -130,6 +136,13 @@ export default function FloatingCallWindow({
               participant={participant}
               onLeave={participant.isLocal ? leaveCall : undefined}
               onHideSelf={participant.isLocal ? onToggleSelfView : undefined}
+              remoteAudioMuted={mutedRemoteParticipantIds.has(participant.identity)}
+              onToggleRemoteAudio={participant.isLocal
+                ? undefined
+                : () => toggleRemoteAudio(participant.identity)}
+              listenersWhoMutedMe={participant.isLocal
+                ? Array.from(listenersWhoMutedMe.values())
+                : undefined}
             />
           ))}
         </div>

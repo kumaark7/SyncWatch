@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,6 +18,7 @@ public class ChatService {
     private static final int MAX_HISTORY_PER_ROOM = 100;
 
     private final Map<String, ArrayDeque<ChatMessage>> historyByRoom = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> callParticipantsByRoom = new ConcurrentHashMap<>();
 
     public ChatMessage createMessage(Room room, String senderId, String senderName, String rawText) {
         String text = normalizeText(rawText);
@@ -55,6 +57,53 @@ public class ChatService {
                 participant.nameTag(),
                 type,
                 participant.nameTag() + " " + action + " the room",
+                System.currentTimeMillis()
+        );
+
+        append(message);
+        return message;
+    }
+
+    public ChatMessage createCallJoinMessage(Room room, String senderId, String senderName) {
+        Set<String> participants = callParticipantsByRoom.computeIfAbsent(
+                room.getId(),
+                ignored -> ConcurrentHashMap.newKeySet()
+        );
+        if (!participants.add(senderId)) {
+            return null;
+        }
+
+        ChatMessage message = new ChatMessage(
+                UUID.randomUUID().toString(),
+                room.getId(),
+                senderId,
+                senderName,
+                ChatMessageType.SYSTEM_CALL_JOIN,
+                senderName + " joined the call",
+                System.currentTimeMillis()
+        );
+
+        append(message);
+        return message;
+    }
+
+    public ChatMessage createCallLeaveMessage(Room room, String senderId, String senderName) {
+        Set<String> participants = callParticipantsByRoom.get(room.getId());
+        if (participants == null || !participants.remove(senderId)) {
+            return null;
+        }
+
+        if (participants.isEmpty()) {
+            callParticipantsByRoom.remove(room.getId(), participants);
+        }
+
+        ChatMessage message = new ChatMessage(
+                UUID.randomUUID().toString(),
+                room.getId(),
+                senderId,
+                senderName,
+                ChatMessageType.SYSTEM_CALL_LEAVE,
+                senderName + " left the call",
                 System.currentTimeMillis()
         );
 

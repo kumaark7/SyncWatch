@@ -9,6 +9,7 @@ import MediaInfo from "./components/MediaInfo";
 import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
 import DrivePicker from "./DrivePicker";
+import { generateDisplayName, generateRoomName } from "./generatedNames";
 import PartyPanel from "./party/PartyPanel";
 import ChatToastStack from "./party/chat/ChatToast";
 import type { ChatMessage } from "./party/chat/types";
@@ -27,6 +28,7 @@ const DRIVE_SCOPE =
 
 const TOKEN_EXPIRY_SKEW_MS = 60000;
 const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
+const GOOGLE_CONNECTION_PREFERENCE_KEY = "syncwatch-google-drive-connected";
 
 type GoogleConnection = {
   accessToken: string;
@@ -144,7 +146,9 @@ function AuthenticatedApp({
     useState(initialRoomId);
 
   const [nameTag, setNameTag] = useState(
-    () => initialDisplayName ?? sessionStorage.getItem(NAME_TAG_STORAGE_KEY) ?? ""
+    () => initialDisplayName
+      ?? (initialRoomId ? sessionStorage.getItem(NAME_TAG_STORAGE_KEY) : null)
+      ?? ""
   );
 
   const [roomName, setRoomName] = useState("");
@@ -184,6 +188,11 @@ function AuthenticatedApp({
   const [googleReady, setGoogleReady] =
     useState(googleApisReady());
 
+  const [restoringGoogleConnection, setRestoringGoogleConnection] =
+    useState(false);
+
+  const googleRestoreAttemptedRef = useRef(false);
+
   const {
     connected,
     chatReady,
@@ -193,6 +202,8 @@ function AuthenticatedApp({
     chatMessages,
     lastChatMessage,
     sendChatMessage,
+    sendCallJoined,
+    sendCallLeft,
     mergeChatHistory
   } = useRoomSocket(roomId, joinedNameTag, sessionClientId);
 
@@ -241,7 +252,9 @@ function AuthenticatedApp({
 
   useEffect(() => {
     if (!lastChatMessage
-        || lastChatMessage.type !== "USER"
+        || (lastChatMessage.type !== "USER"
+          && lastChatMessage.type !== "SYSTEM_CALL_JOIN"
+          && lastChatMessage.type !== "SYSTEM_CALL_LEAVE")
         || lastChatMessage.senderId === clientId
         || lastUnreadMessageIdRef.current === lastChatMessage.id) {
       return;
@@ -384,7 +397,7 @@ function AuthenticatedApp({
   }, [room]);
 
   async function createRoom() {
-    const cleanedRoomName = roomName.trim();
+    const cleanedRoomName = roomName.trim() || generateRoomName();
     const roomNameLength = Array.from(cleanedRoomName).length;
     if (roomNameLength < 2 || roomNameLength > 48) {
       alert("Room name must be 2 to 48 characters.");
@@ -443,7 +456,7 @@ function AuthenticatedApp({
   }
 
   function saveNameTag() {
-    const cleanedName = nameTag.trim();
+    const cleanedName = nameTag.trim() || generateDisplayName();
     const nameLength = Array.from(cleanedName).length;
     if (nameLength < 2 || nameLength > 32) {
       alert("Your name must be 2 to 32 characters.");
@@ -509,12 +522,28 @@ function AuthenticatedApp({
       return;
     }
 
-    const connection = await requestGoogleAccessToken("consent");
+    const previouslyConnected =
+      localStorage.getItem(GOOGLE_CONNECTION_PREFERENCE_KEY) === "true";
+    const connection = await requestGoogleAccessToken(
+      previouslyConnected ? "" : "consent"
+    );
     if (!connection) {
       return;
     }
 
+    if (room?.isHost && room.hasFile) {
+      const updated = await updateRoomDriveToken(
+        connection.accessToken
+      );
+
+      if (!updated) {
+        showToast("Could not restore Google Drive access.");
+        return;
+      }
+    }
+
     setGoogleConnection(connection);
+    localStorage.setItem(GOOGLE_CONNECTION_PREFERENCE_KEY, "true");
     showToast("Connected to Google Drive");
   }
 
@@ -530,6 +559,111 @@ function AuthenticatedApp({
     showToast("Please connect Google Drive first");
     return null;
   }
+
+  async function updateRoomDriveToken(accessToken: string) {
+    const response = await fetch(
+      `${API_URL}/api/rooms/${roomId}/drive-token`,
+      {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          accessToken,
+          clientId
+        })
+      }
+    );
+
+    return response.ok;
+  }
+
+  useEffect(() => {
+    if (
+      !googleReady
+      || !room?.isHost
+      || googleConnection
+      || googleRestoreAttemptedRef.current
+      || localStorage.getItem(GOOGLE_CONNECTION_PREFERENCE_KEY) !== "true"
+    ) {
+      return;
+    }
+
+    googleRestoreAttemptedRef.current = true;
+    let cancelled = false;
+    setRestoringGoogleConnection(true);
+
+    void requestGoogleAccessToken("").then(async (connection) => {
+      if (!connection || cancelled) {
+        return;
+      }
+
+      if (room.hasFile) {
+        const updated = await updateRoomDriveToken(connection.accessToken);
+        if (!updated || cancelled) {
+          return;
+        }
+      }
+
+      setGoogleConnection(connection);
+    }).finally(() => {
+      if (!cancelled) {
+        setRestoringGoogleConnection(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [googleConnection, googleReady, room?.hasFile, room?.isHost, roomId]);
+
+  useEffect(() => {
+    if (
+      !googleReady ||
+      !googleConnection ||
+      !room?.isHost ||
+      !room.hasFile
+    ) {
+      return;
+    }
+
+    const refreshDelay = Math.max(
+      0,
+      googleConnection.expiresAt - Date.now()
+    );
+
+    const timer = window.setTimeout(async () => {
+      const refreshedConnection = await requestGoogleAccessToken("");
+
+      if (!refreshedConnection) {
+        setGoogleConnection(null);
+        showToast("Google Drive connection expired. Reconnect to continue.");
+        return;
+      }
+
+      const updated = await updateRoomDriveToken(
+        refreshedConnection.accessToken
+      );
+
+      if (!updated) {
+        setGoogleConnection(null);
+        showToast("Could not refresh Google Drive access.");
+        return;
+      }
+
+      setGoogleConnection(refreshedConnection);
+    }, refreshDelay);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    clientId,
+    googleConnection?.expiresAt,
+    googleReady,
+    room?.hasFile,
+    room?.isHost,
+    roomId
+  ]);
 
   async function selectFile(file: {
     id: string;
@@ -562,6 +696,8 @@ function AuthenticatedApp({
   async function disconnectGoogleDrive() {
     const token = googleConnection?.accessToken;
     setGoogleConnection(null);
+    localStorage.removeItem(GOOGLE_CONNECTION_PREFERENCE_KEY);
+    googleRestoreAttemptedRef.current = true;
 
     if (token && googleReady && window.google?.accounts?.oauth2) {
       window.google.accounts.oauth2.revoke(token, () => {});
@@ -649,10 +785,14 @@ function AuthenticatedApp({
     !googleConnection ? (
       <button
         className="primary"
-        disabled={!googleReady}
+        disabled={!googleReady || restoringGoogleConnection}
         onClick={() => void connectGoogleDrive()}
       >
-        {googleReady ? "Connect Google Drive" : "Loading Google Drive..."}
+        {!googleReady
+          ? "Loading Google Drive..."
+          : restoringGoogleConnection
+            ? "Restoring Google Drive..."
+            : "Connect Google Drive"}
       </button>
     ) : (
       <>
@@ -681,7 +821,11 @@ function AuthenticatedApp({
     >
       <header className="topBar">
         <div className="brandBlock">
-          <strong>SyncWatch</strong>
+          <img
+            className="brandLogo"
+            src="/brand/syncwatch-logo.png"
+            alt="SyncWatch"
+          />
           {roomId && (
             <span className="roomTitle" title={`Room code: ${roomId}`}>
               {room?.roomName || roomName || "Watch Party"}
@@ -721,9 +865,9 @@ function AuthenticatedApp({
             <input
               value={roomName}
               onChange={(event) => setRoomName(event.target.value)}
-              placeholder="Room name"
+              placeholder="Room name (optional)"
               maxLength={48}
-              aria-label="Room name"
+              aria-label="Room name (optional)"
               autoFocus
             />
 
@@ -731,9 +875,9 @@ function AuthenticatedApp({
               className="nameTagInput"
               value={nameTag}
               onChange={(event) => setNameTag(event.target.value)}
-              placeholder="Your name tag"
+              placeholder="Your name tag (optional)"
               maxLength={32}
-              aria-label="Your name tag"
+              aria-label="Your name tag (optional)"
             />
 
             <button className="primary" onClick={() => void createRoom()}>
@@ -781,7 +925,12 @@ function AuthenticatedApp({
           </div>
         </section>
       ) : (
-        <CallProvider roomId={roomId} clientId={clientId}>
+        <CallProvider
+          roomId={roomId}
+          clientId={clientId}
+          onCallJoined={sendCallJoined}
+          onCallLeft={sendCallLeft}
+        >
           <section className="watchLayout">
             <div className="watchColumn">
               <section className="playerSurface">

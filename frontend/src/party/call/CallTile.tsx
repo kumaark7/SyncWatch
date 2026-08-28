@@ -9,60 +9,67 @@ import {
   Track,
   type Participant
 } from "livekit-client";
+import { Volume2, VolumeX } from "lucide-react";
 import CallControls from "./CallControls";
 
 type Props = {
   participant: Participant;
   onLeave?: () => Promise<void>;
   onHideSelf?: () => void;
+  remoteAudioMuted?: boolean;
+  onToggleRemoteAudio?: () => Promise<void>;
+  listenersWhoMutedMe?: readonly string[];
 };
 
 function participantInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() || "?";
 }
 
-export default function CallTile({ participant, onLeave, onHideSelf }: Props) {
+export default function CallTile({
+  participant,
+  onLeave,
+  onHideSelf,
+  remoteAudioMuted = false,
+  onToggleRemoteAudio,
+  listenersWhoMutedMe = []
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsTimerRef = useRef<number | null>(null);
-  const [controlsVisible, setControlsVisible] = useState(false);
+  const overlayTimerRef = useRef<number | null>(null);
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const [speakerBusy, setSpeakerBusy] = useState(false);
   const [, refresh] = useState(0);
   const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
   const cameraTrack = cameraPublication?.track;
   const name = participant.name?.trim() || "Guest";
 
-  function clearControlsTimer() {
-    if (controlsTimerRef.current !== null) {
-      window.clearTimeout(controlsTimerRef.current);
-      controlsTimerRef.current = null;
+  function clearOverlayTimer() {
+    if (overlayTimerRef.current !== null) {
+      window.clearTimeout(overlayTimerRef.current);
+      overlayTimerRef.current = null;
     }
   }
 
-  function revealControls() {
-    if (!participant.isLocal) {
-      return;
-    }
-
-    clearControlsTimer();
-    setControlsVisible(true);
-    controlsTimerRef.current = window.setTimeout(() => {
-      setControlsVisible(false);
-      controlsTimerRef.current = null;
+  function revealOverlay() {
+    clearOverlayTimer();
+    setOverlayVisible(true);
+    overlayTimerRef.current = window.setTimeout(() => {
+      setOverlayVisible(false);
+      overlayTimerRef.current = null;
     }, 2800);
   }
 
   function handleTilePointerDown(event: ReactPointerEvent<HTMLElement>) {
     const target = event.target;
-    if (!participant.isLocal
-        || event.pointerType === "mouse"
+    if (event.pointerType === "mouse"
         || (target instanceof Element && target.closest("button"))) {
       return;
     }
 
-    if (controlsVisible) {
-      clearControlsTimer();
-      setControlsVisible(false);
+    if (overlayVisible) {
+      clearOverlayTimer();
+      setOverlayVisible(false);
     } else {
-      revealControls();
+      revealOverlay();
     }
   }
 
@@ -88,7 +95,7 @@ export default function CallTile({ participant, onLeave, onHideSelf }: Props) {
     };
   }, [participant]);
 
-  useEffect(() => () => clearControlsTimer(), []);
+  useEffect(() => () => clearOverlayTimer(), []);
 
   useEffect(() => {
     const element = videoRef.current;
@@ -103,10 +110,13 @@ export default function CallTile({ participant, onLeave, onHideSelf }: Props) {
   }, [cameraPublication?.isMuted, cameraTrack]);
 
   const cameraVisible = Boolean(cameraTrack && !cameraPublication?.isMuted);
+  const listenerMuteLabel = listenersWhoMutedMe.length === 1
+    ? `${listenersWhoMutedMe[0]} cannot hear you`
+    : `${listenersWhoMutedMe.length} participants cannot hear you`;
 
   return (
     <article
-      className={`callTile ${participant.isLocal ? "local" : "remote"} ${participant.isSpeaking ? "speaking" : ""} ${controlsVisible ? "controlsVisible" : ""}`}
+      className={`callTile ${participant.isLocal ? "local" : "remote"} ${participant.isSpeaking ? "speaking" : ""} ${overlayVisible ? "overlayVisible" : ""}`}
       tabIndex={participant.isLocal ? 0 : undefined}
       aria-label={participant.isLocal ? `${name}, your call preview` : `${name} call participant`}
       onPointerDown={handleTilePointerDown}
@@ -130,8 +140,46 @@ export default function CallTile({ participant, onLeave, onHideSelf }: Props) {
         <CallControls
           onLeave={onLeave}
           onHideSelf={onHideSelf}
-          onInteract={revealControls}
+          onInteract={revealOverlay}
         />
+      )}
+
+      {!participant.isLocal && onToggleRemoteAudio && (
+        <button
+          className={`callRemoteAudioButton ${remoteAudioMuted ? "muted" : ""}`}
+          disabled={speakerBusy}
+          aria-label={remoteAudioMuted ? `Hear ${name}` : `Mute ${name} for me`}
+          aria-pressed={remoteAudioMuted}
+          title={remoteAudioMuted ? `Hear ${name}` : `Mute ${name} for me`}
+          onFocus={revealOverlay}
+          onPointerDown={revealOverlay}
+          onClick={async () => {
+            setSpeakerBusy(true);
+            try {
+              await onToggleRemoteAudio();
+            } finally {
+              setSpeakerBusy(false);
+            }
+          }}
+        >
+          {remoteAudioMuted
+            ? <VolumeX size={16} strokeWidth={2.2} aria-hidden="true" />
+            : <Volume2 size={16} strokeWidth={2.2} aria-hidden="true" />}
+        </button>
+      )}
+
+      {participant.isLocal && listenersWhoMutedMe.length > 0 && (
+        <span
+          className="callListenerMuteNotice"
+          role="status"
+          aria-label={listenerMuteLabel}
+          title={listenerMuteLabel}
+        >
+          <VolumeX size={15} strokeWidth={2.2} aria-hidden="true" />
+          {listenersWhoMutedMe.length > 1 && (
+            <span aria-hidden="true">{listenersWhoMutedMe.length}</span>
+          )}
+        </span>
       )}
 
       <div className="callTileCaption">

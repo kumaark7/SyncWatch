@@ -104,6 +104,36 @@ public class RoomController {
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @PutMapping("/rooms/{roomId}/drive-token")
+    public ResponseEntity<?> refreshDriveToken(
+            @PathVariable String roomId,
+            @RequestBody DriveTokenRequest request
+    ) {
+        if (request.accessToken() == null || request.accessToken().isBlank()
+                || request.clientId() == null || request.clientId().isBlank()) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "accessToken and clientId are required")
+            );
+        }
+
+        return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
+            if (!room.isHost(request.clientId())) {
+                return ResponseEntity.status(403).body(
+                        Map.of("error", "Only the room host can refresh Drive access")
+                );
+            }
+
+            if (!room.hasFile()) {
+                return ResponseEntity.status(409).body(
+                        Map.of("error", "No Drive file is selected")
+                );
+            }
+
+            room.setAccessToken(request.accessToken());
+            return ResponseEntity.noContent().build();
+        }).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @DeleteMapping("/rooms/{roomId}/file")
     public ResponseEntity<?> clearFile(
             @PathVariable String roomId,

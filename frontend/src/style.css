@@ -155,25 +155,12 @@ input, select {
   overflow: hidden;
 }
 
-.brandBlock strong {
-  color: #fff;
-  font-size: 18px;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
-.brandBlock strong::before {
-  content: "▶";
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-right: 10px;
-  border: 2px solid var(--accent-2);
-  border-radius: 50%;
-  color: var(--accent);
-  font-size: 12px;
-  vertical-align: middle;
+.brandLogo {
+  width: auto;
+  height: 40px;
+  max-width: min(180px, 38vw);
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .brandBlock span {
@@ -277,6 +264,13 @@ input, select {
 
 .homeShell .topBar {
   margin-bottom: 0;
+  min-height: 88px;
+  padding: 8px 20px;
+}
+
+.homeShell .brandLogo {
+  height: 68px;
+  max-width: min(220px, 42vw);
 }
 
 .homePanel {
@@ -377,6 +371,86 @@ input, select {
 }
 
 .videoFrame .video { display: block; }
+
+.seekStepControls {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+  transform: translateX(-50%);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.seekStepButton {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-color: rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(7, 10, 16, 0.82);
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.seekStepButton:hover:not(:disabled) {
+  border-color: rgba(125, 162, 255, 0.62);
+  background: rgba(22, 31, 49, 0.94);
+}
+
+.seekStepIcon {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.seekStepIcon > span {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .seekStepControls {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 4px);
+  }
+
+  .videoFrame:hover .seekStepControls,
+  .videoFrame:focus-within .seekStepControls {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+  }
+}
+
+.theater .seekStepControls,
+.fullscreenMode .seekStepControls {
+  bottom: 36px;
+  gap: clamp(64px, 10vw, 160px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+}
+
+.theater .videoFrame.seekControlsVisible .seekStepControls,
+.fullscreenMode .videoFrame.seekControlsVisible .seekStepControls,
+.theater .videoFrame:focus-within .seekStepControls,
+.fullscreenMode .videoFrame:focus-within .seekStepControls {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
 
 .videoPlaceholder {
   display: grid;
@@ -781,15 +855,30 @@ input, select {
 
 .chatMessageGroup {
   max-width: calc(88% - 37px);
-  display: grid;
-  gap: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .chatMessageRow.own .chatMessageGroup {
+  align-items: flex-end;
+}
+
+.chatMessageItem {
+  max-width: 100%;
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+}
+
+.chatMessageRow.own .chatMessageItem {
   justify-items: end;
 }
 
 .chatMessageBubble {
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
   padding: 8px 11px;
   border: 1px solid var(--border-soft);
@@ -822,7 +911,7 @@ input, select {
   white-space: nowrap;
 }
 
-.chatMessageGroup > time {
+.chatMessageItem > time {
   color: var(--muted-2);
   font-size: 9px;
   line-height: 1;
@@ -835,12 +924,6 @@ input, select {
   line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-
-.chatMessageBubble p + p {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .chatSystemMessage {
@@ -1133,7 +1216,7 @@ input, select {
   white-space: nowrap;
 }
 
-.callTile.local .callTileCaption {
+.callTile .callTileCaption {
   opacity: 0;
   transform: translateY(5px);
   pointer-events: none;
@@ -1184,9 +1267,190 @@ input, select {
   padding: 0;
 }
 
+.callControlCluster {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+}
+
+.callControlCluster .callControlMain {
+  border-radius: 8px 0 0 8px;
+}
+
+.callDeviceMenuTrigger {
+  width: 18px;
+  min-width: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  color: #dbe7ff;
+}
+
+.callDeviceMenuTrigger svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex: none;
+  pointer-events: none;
+}
+
+.callDeviceMenuTrigger[aria-expanded="true"] {
+  color: var(--text);
+  background: rgba(125, 162, 255, 0.2);
+}
+
+.callDeviceMenu {
+  position: fixed;
+  z-index: 110;
+  width: min(220px, calc(100vw - 16px));
+  display: grid;
+  gap: 5px;
+  padding: 7px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid rgba(125, 162, 255, 0.32);
+  border-radius: 10px;
+  background: rgba(8, 12, 20, 0.98);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+}
+
+.callDeviceMenu > strong {
+  padding: 1px 5px 3px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.callDeviceOptions {
+  display: grid;
+  gap: 2px;
+}
+
+.callDeviceOptions button {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  justify-content: stretch;
+  gap: 6px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.callDeviceOptions button:hover,
+.callDeviceOptions button:focus-visible {
+  background: rgba(125, 162, 255, 0.14);
+}
+
+.callDeviceOptions button svg {
+  opacity: 0;
+}
+
+.callDeviceOptions button svg.selected {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.callDeviceOptions button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.callDeviceEmpty {
+  padding: 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.callDeviceMenu.compact {
+  gap: 4px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.callDeviceMenu.compact .callDeviceOptions button {
+  min-height: 28px;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+.callDeviceMenu.compact .callDeviceOptions button svg {
+  width: 12px;
+  height: 12px;
+}
+
 .callControlIcon svg {
   display: block;
   pointer-events: none;
+}
+
+.callRemoteAudioButton,
+.callListenerMuteNotice {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(7, 10, 16, 0.84);
+  color: var(--text);
+  backdrop-filter: blur(6px);
+}
+
+.callRemoteAudioButton {
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.callRemoteAudioButton.muted {
+  border-color: rgba(255, 107, 117, 0.45);
+  color: #ffb4ba;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.callTile.remote.overlayVisible .callRemoteAudioButton,
+.callTile.remote:focus-within .callRemoteAudioButton {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.callListenerMuteNotice {
+  gap: 2px;
+  border-color: rgba(255, 107, 117, 0.45);
+  color: #ffb4ba;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .callTile.remote:hover .callRemoteAudioButton {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
 }
 
 .callControls button.active {
@@ -1201,23 +1465,23 @@ input, select {
 }
 
 .callTile.local:focus-within .callControlsWrap,
-.callTile.local.controlsVisible .callControlsWrap,
-.callTile.local:focus-within .callTileCaption,
-.callTile.local.controlsVisible .callTileCaption,
+.callTile.local.overlayVisible .callControlsWrap,
+.callTile:focus-within .callTileCaption,
+.callTile.overlayVisible .callTileCaption,
 .callControlsWrap.hasError {
   opacity: 1;
   transform: translateY(0);
 }
 
 .callTile.local:focus-within .callControlsWrap,
-.callTile.local.controlsVisible .callControlsWrap,
+.callTile.local.overlayVisible .callControlsWrap,
 .callControlsWrap.hasError {
   pointer-events: auto;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .callTile.local:hover .callControlsWrap,
-  .callTile.local:hover .callTileCaption {
+  .callTile:hover .callTileCaption {
     opacity: 1;
     transform: translateY(0);
   }
@@ -1522,9 +1786,79 @@ input, select {
   }
 }
 
-@container floating-call (max-width: 239px) {
-  .floatingCallGrid .callControls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (hover: hover) and (pointer: fine) {
+  @container floating-call (max-width: 280px) {
+    .floatingCallGrid .callControls {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 3px;
+      padding: 3px;
+      border-radius: 8px;
+    }
+
+    .floatingCallGrid .callControlsWrap {
+      right: 4px;
+      bottom: 30px;
+      left: 4px;
+    }
+
+    .floatingCallGrid .callControls button {
+      min-height: 27px;
+      border-radius: 6px;
+    }
+
+    .floatingCallGrid .callControlIcon svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .floatingCallGrid .callRemoteAudioButton,
+    .floatingCallGrid .callListenerMuteNotice {
+      top: 5px;
+      left: 5px;
+      width: 26px;
+      height: 26px;
+      min-width: 26px;
+      min-height: 26px;
+      border-radius: 7px;
+    }
+
+    .floatingCallGrid .callRemoteAudioButton svg,
+    .floatingCallGrid .callListenerMuteNotice svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .floatingCallGrid .callTileCaption {
+      min-height: 27px;
+      padding: 5px 7px;
+      font-size: 10px;
+    }
+
+    .floatingCallGrid .callMicState {
+      font-size: 9px;
+    }
+  }
+
+  @container floating-call (max-height: 180px) {
+    .floatingCallGrid .callControls {
+      gap: 3px;
+      padding: 3px;
+    }
+
+    .floatingCallGrid .callControlsWrap {
+      right: 4px;
+      bottom: 29px;
+      left: 4px;
+    }
+
+    .floatingCallGrid .callControls button {
+      min-height: 26px;
+    }
+
+    .floatingCallGrid .callControlIcon svg {
+      width: 13px;
+      height: 13px;
+    }
   }
 }
 
@@ -2026,8 +2360,14 @@ button.chatToastOpen:hover:not(:disabled) {
     overflow: visible;
   }
 
-  .brandBlock strong {
+  .brandBlock .brandLogo {
     grid-column: 1 / -1;
+    height: 36px;
+  }
+
+  .homeShell .brandLogo {
+    height: 44px;
+    max-width: min(190px, 58vw);
   }
 
   .brandBlock .hostPill {
@@ -2122,6 +2462,17 @@ button.chatToastOpen:hover:not(:disabled) {
   .roomEntryCard,
   .loginCard {
     border-radius: 12px;
+  }
+
+  .seekStepControls {
+    bottom: 54px;
+  }
+
+  .seekStepButton {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 
   .partyPanel {

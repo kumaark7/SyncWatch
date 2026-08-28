@@ -50,7 +50,7 @@ public class LiveKitTokenService {
                 new CanPublish(true),
                 new CanPublishSources(List.of("camera", "microphone")),
                 new CanSubscribe(true),
-                new CanPublishData(false)
+                new CanPublishData(true)
         );
 
         return new CallTokenResponse(serverUrl, accessToken.toJwt());

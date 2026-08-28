@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { RotateCcw, RotateCw } from "lucide-react";
 import { API_URL } from "./api";
 import type { SyncEvent } from "./types";
 
@@ -46,12 +47,19 @@ export default function VideoPlayer(props: Props) {
   const remoteApplyTimer = useRef<number | null>(null);
   const rateTimer = useRef<number | null>(null);
   const overlayTimer = useRef<number | null>(null);
+  const seekControlsTimer = useRef<number | null>(null);
 
   const [needsPlaybackStart, setNeedsPlaybackStart] =
     useState(false);
 
   const [overlayMode, setOverlayMode] =
     useState<OverlayMode>("none");
+
+  const [mediaDuration, setMediaDuration] =
+    useState<number | null>(null);
+
+  const [seekControlsVisible, setSeekControlsVisible] =
+    useState(false);
 
   const hasAlignedPlayback = useRef(false);
 
@@ -167,6 +175,50 @@ export default function VideoPlayer(props: Props) {
     }, 2500);
   };
 
+  const revealSeekControls = () => {
+    setSeekControlsVisible(true);
+
+    if (seekControlsTimer.current !== null) {
+      window.clearTimeout(seekControlsTimer.current);
+    }
+
+    seekControlsTimer.current = window.setTimeout(() => {
+      setSeekControlsVisible(false);
+      seekControlsTimer.current = null;
+    }, 2400);
+  };
+
+  const requestSynchronizedSeek = (
+    offsetSeconds: number
+  ) => {
+    const video = videoRef.current;
+
+    if (!video || !Number.isFinite(video.duration)) {
+      return;
+    }
+
+    const currentTime = Number.isFinite(video.currentTime)
+      ? video.currentTime
+      : 0;
+
+    const target = Math.min(
+      video.duration,
+      Math.max(0, currentTime + offsetSeconds)
+    );
+
+    if (Math.abs(target - currentTime) < 0.001) {
+      return;
+    }
+
+    resetRate(video);
+
+    /*
+     * Use the native seek lifecycle so onSeeked sends the same
+     * authoritative SEEK command as the built-in timeline control.
+     */
+    video.currentTime = target;
+  };
+
   const targetTime = (event: SyncEvent) => {
     if (!event.playing) {
       return Math.max(0, event.time);
@@ -208,6 +260,10 @@ export default function VideoPlayer(props: Props) {
 
       clearRateTimer();
       clearOverlayTimer();
+
+      if (seekControlsTimer.current !== null) {
+        window.clearTimeout(seekControlsTimer.current);
+      }
     };
   }, []);
 
@@ -419,6 +475,8 @@ export default function VideoPlayer(props: Props) {
   ]);
 
   useEffect(() => {
+    setMediaDuration(null);
+
     if (!props.hasFile) {
       setNeedsPlaybackStart(false);
       setOverlayMode("none");
@@ -466,7 +524,11 @@ export default function VideoPlayer(props: Props) {
       : "Buffering...";
 
   return (
-    <div className="videoFrame">
+    <div
+      className={`videoFrame ${seekControlsVisible ? "seekControlsVisible" : ""}`}
+      onPointerMove={revealSeekControls}
+      onPointerDown={revealSeekControls}
+    >
       <video
         key={`${props.roomId}:${props.fileName ?? ""}`}
         ref={videoRef}
@@ -482,6 +544,11 @@ export default function VideoPlayer(props: Props) {
 
           beginRemoteApply(2000);
           resetRate(video);
+          setMediaDuration(
+            Number.isFinite(video.duration)
+              ? video.duration
+              : null
+          );
 
           if (
             props.initialTime > 0
@@ -499,6 +566,15 @@ export default function VideoPlayer(props: Props) {
           } else {
             enforceAuthoritativePause(video);
           }
+        }}
+
+        onDurationChange={(event) => {
+          const duration = event.currentTarget.duration;
+          setMediaDuration(
+            Number.isFinite(duration)
+              ? duration
+              : null
+          );
         }}
 
         onPlay={(event) => {
@@ -644,6 +720,39 @@ export default function VideoPlayer(props: Props) {
           );
         }}
       />
+
+      <div
+        className="seekStepControls"
+        aria-label="Synchronized seek controls"
+      >
+        <button
+          type="button"
+          className="seekStepButton"
+          disabled={mediaDuration === null}
+          aria-label="Back 10 seconds"
+          title="Back 10 seconds"
+          onClick={() => requestSynchronizedSeek(-10)}
+        >
+          <span className="seekStepIcon" aria-hidden="true">
+            <RotateCcw size={24} strokeWidth={2} />
+            <span>10</span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className="seekStepButton"
+          disabled={mediaDuration === null}
+          aria-label="Forward 10 seconds"
+          title="Forward 10 seconds"
+          onClick={() => requestSynchronizedSeek(10)}
+        >
+          <span className="seekStepIcon" aria-hidden="true">
+            <RotateCw size={24} strokeWidth={2} />
+            <span>10</span>
+          </span>
+        </button>
+      </div>
 
       {overlayMode !== "none" && (
         <div className="syncStatusOverlay">

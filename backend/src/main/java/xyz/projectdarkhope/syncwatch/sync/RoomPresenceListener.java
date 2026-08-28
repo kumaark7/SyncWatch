@@ -40,6 +40,18 @@ public class RoomPresenceListener {
                     SyncEvent.participants(room)
             );
             for (RoomParticipant participant : departures) {
+                ChatMessage callLeaveMessage = chatService.createCallLeaveMessage(
+                        room,
+                        participant.clientId(),
+                        participant.nameTag()
+                );
+                if (callLeaveMessage != null) {
+                    messaging.convertAndSend(
+                            "/topic/rooms/" + room.getId() + "/chat",
+                            callLeaveMessage
+                    );
+                }
+
                 ChatMessage leaveMessage = chatService.createPresenceMessage(
                         room,
                         participant,

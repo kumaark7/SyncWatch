@@ -166,6 +166,42 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     [roomId]
   );
 
+  const sendCallJoined = useCallback(() => {
+    const client = clientRef.current;
+    if (!client?.connected || !roomId || !roomJoinedRef.current) {
+      return false;
+    }
+
+    try {
+      client.publish({
+        destination: `/app/rooms/${roomId}/chat/call-joined`,
+        body: ""
+      });
+    } catch {
+      return false;
+    }
+
+    return true;
+  }, [roomId]);
+
+  const sendCallLeft = useCallback(() => {
+    const client = clientRef.current;
+    if (!client?.connected || !roomId || !roomJoinedRef.current) {
+      return false;
+    }
+
+    try {
+      client.publish({
+        destination: `/app/rooms/${roomId}/chat/call-left`,
+        body: ""
+      });
+    } catch {
+      return false;
+    }
+
+    return true;
+  }, [roomId]);
+
   const mergeChatHistory = useCallback((messages: ChatMessage[]) => {
     setChatMessages((existing) => mergeMessages(existing, messages));
   }, []);
@@ -179,6 +215,8 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     chatMessages,
     lastChatMessage,
     sendChatMessage,
+    sendCallJoined,
+    sendCallLeft,
     mergeChatHistory
   };
 }

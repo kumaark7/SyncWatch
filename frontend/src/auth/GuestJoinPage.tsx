@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { generateDisplayName } from "../generatedNames";
 import { checkGuestRoom } from "./authApi";
 
 type Props = {
@@ -52,7 +53,7 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
       return;
     }
 
-    const cleanedName = displayName.trim();
+    const cleanedName = displayName.trim() || generateDisplayName();
     const nameLength = Array.from(cleanedName).length;
     if (nameLength < 2 || nameLength > 32) {
       setError("Your name must be 2 to 32 characters.");
@@ -114,12 +115,13 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
           <div className="loginError">Room not found or no longer available.</div>
         ) : (
           <label className="fieldLabel">
-            Your name
+            Your name (optional)
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Random name if left blank"
               autoComplete="name"
-              maxLength={64}
+              maxLength={32}
               disabled={(inviteMode && roomAvailable !== true) || loading}
               autoFocus={inviteMode}
             />
@@ -135,7 +137,7 @@ export default function GuestJoinPage({ roomId, onJoin, onAdminLogin }: Props) {
               loading
               || (inviteMode && roomAvailable !== true)
               || (!inviteMode && !/^[A-Z0-9]{6}$/.test(roomCode.trim().toUpperCase()))
-              || Array.from(displayName.trim()).length < 2
+              || Array.from(displayName.trim()).length === 1
             }
           >
             {inviteMode && roomAvailable === null

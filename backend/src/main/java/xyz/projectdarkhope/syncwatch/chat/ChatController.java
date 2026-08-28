@@ -64,6 +64,58 @@ public class ChatController {
         messaging.convertAndSend("/topic/rooms/" + room.getId() + "/chat", message);
     }
 
+    @MessageMapping("/rooms/{roomId}/chat/call-joined")
+    public void callJoined(
+            @DestinationVariable String roomId,
+            @Header(SimpMessageHeaderAccessor.SESSION_ID_HEADER) String sessionId
+    ) {
+        Room room = rooms.find(roomId).orElse(null);
+        if (room == null || sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+
+        String senderId = room.getClientIdForSession(sessionId);
+        if (senderId == null) {
+            return;
+        }
+
+        String senderName = room.getParticipantName(senderId);
+        if (senderName == null) {
+            return;
+        }
+
+        ChatMessage message = chatService.createCallJoinMessage(room, senderId, senderName);
+        if (message != null) {
+            messaging.convertAndSend("/topic/rooms/" + room.getId() + "/chat", message);
+        }
+    }
+
+    @MessageMapping("/rooms/{roomId}/chat/call-left")
+    public void callLeft(
+            @DestinationVariable String roomId,
+            @Header(SimpMessageHeaderAccessor.SESSION_ID_HEADER) String sessionId
+    ) {
+        Room room = rooms.find(roomId).orElse(null);
+        if (room == null || sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+
+        String senderId = room.getClientIdForSession(sessionId);
+        if (senderId == null) {
+            return;
+        }
+
+        String senderName = room.getParticipantName(senderId);
+        if (senderName == null) {
+            return;
+        }
+
+        ChatMessage message = chatService.createCallLeaveMessage(room, senderId, senderName);
+        if (message != null) {
+            messaging.convertAndSend("/topic/rooms/" + room.getId() + "/chat", message);
+        }
+    }
+
     @GetMapping("/api/rooms/{roomId}/chat")
     @ResponseBody
     public ResponseEntity<?> history(

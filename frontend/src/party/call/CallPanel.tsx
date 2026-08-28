@@ -14,6 +14,9 @@ export default function CallPanel({ selfViewHidden, onToggleSelfView }: Props) {
     error,
     joinCall,
     leaveCall,
+    listenersWhoMutedMe,
+    mutedRemoteParticipantIds,
+    toggleRemoteAudio,
     clearError
   } = useCall();
   const visibleParticipants = selfViewHidden
@@ -75,6 +78,13 @@ export default function CallPanel({ selfViewHidden, onToggleSelfView }: Props) {
               participant={participant}
               onLeave={participant.isLocal ? leaveCall : undefined}
               onHideSelf={participant.isLocal ? onToggleSelfView : undefined}
+              remoteAudioMuted={mutedRemoteParticipantIds.has(participant.identity)}
+              onToggleRemoteAudio={participant.isLocal
+                ? undefined
+                : () => toggleRemoteAudio(participant.identity)}
+              listenersWhoMutedMe={participant.isLocal
+                ? Array.from(listenersWhoMutedMe.values())
+                : undefined}
             />
           ))}
         </div>

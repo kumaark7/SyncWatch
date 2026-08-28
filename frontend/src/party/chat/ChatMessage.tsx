@@ -19,37 +19,47 @@ function senderInitial(name: string) {
 }
 
 export default function ChatMessage({ messages, own, showTimestamp }: Props) {
-  const [timestampRevealed, setTimestampRevealed] = useState(false);
+  const [revealedTimestampId, setRevealedTimestampId] = useState<string | null>(null);
   const firstMessage = messages[0];
   const lastMessage = messages[messages.length - 1];
-  const timestampVisible = showTimestamp || timestampRevealed;
 
   if (!firstMessage || !lastMessage) {
     return null;
   }
 
-  function toggleTimestamp() {
-    if (!showTimestamp) {
-      setTimestampRevealed((visible) => !visible);
+  function toggleTimestamp(messageId: string, alwaysVisible = false) {
+    if (alwaysVisible) {
+      return;
     }
+
+    setRevealedTimestampId((current) => current === messageId ? null : messageId);
   }
 
-  function handleTimestampKeyDown(event: KeyboardEvent<HTMLElement>) {
+  function handleTimestampKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    messageId: string,
+    alwaysVisible = false
+  ) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      toggleTimestamp();
+      toggleTimestamp(messageId, alwaysVisible);
     }
   }
 
   if (firstMessage.type !== "USER") {
+    const timestampVisible = showTimestamp || revealedTimestampId === firstMessage.id;
     return (
       <li
         className="chatSystemMessage"
         role="button"
         tabIndex={0}
         aria-label={`${firstMessage.text}. ${timestampVisible ? "Hide" : "Show"} timestamp`}
-        onClick={toggleTimestamp}
-        onKeyDown={handleTimestampKeyDown}
+        onClick={() => toggleTimestamp(firstMessage.id, showTimestamp)}
+        onKeyDown={(event) => handleTimestampKeyDown(
+          event,
+          firstMessage.id,
+          showTimestamp
+        )}
       >
         <span>{firstMessage.text}</span>
         {timestampVisible && (
@@ -70,24 +80,37 @@ export default function ChatMessage({ messages, own, showTimestamp }: Props) {
       )}
 
       <div className="chatMessageGroup">
-        <div
-          className="chatMessageBubble"
-          role="button"
-          tabIndex={0}
-          aria-label={`${timestampVisible ? "Hide" : "Show"} message timestamp`}
-          onClick={toggleTimestamp}
-          onKeyDown={handleTimestampKeyDown}
-        >
-          {!own && <strong>{firstMessage.senderName}</strong>}
-          {messages.map((message) => (
-            <p key={message.id}>{message.text}</p>
-          ))}
-        </div>
-        {timestampVisible && (
-          <time dateTime={new Date(lastMessage.timestamp).toISOString()}>
-            {formatTime(lastMessage.timestamp)}
-          </time>
-        )}
+        {messages.map((message, index) => {
+          const timestampVisible = (
+            showTimestamp && message.id === lastMessage.id
+          ) || revealedTimestampId === message.id;
+          const timestampAlwaysVisible = showTimestamp && message.id === lastMessage.id;
+
+          return (
+            <div className="chatMessageItem" key={message.id}>
+              <div
+                className="chatMessageBubble"
+                role="button"
+                tabIndex={0}
+                aria-label={`${timestampVisible ? "Hide" : "Show"} message timestamp`}
+                onClick={() => toggleTimestamp(message.id, timestampAlwaysVisible)}
+                onKeyDown={(event) => handleTimestampKeyDown(
+                  event,
+                  message.id,
+                  timestampAlwaysVisible
+                )}
+              >
+                {!own && index === 0 && <strong>{firstMessage.senderName}</strong>}
+                <p>{message.text}</p>
+              </div>
+              {timestampVisible && (
+                <time dateTime={new Date(message.timestamp).toISOString()}>
+                  {formatTime(message.timestamp)}
+                </time>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {own && (
