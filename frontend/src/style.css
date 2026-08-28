@@ -372,6 +372,60 @@ input, select {
 
 .videoFrame .video { display: block; }
 
+.gestureControl {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-color: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(7, 10, 16, 0.82);
+  color: var(--text-muted);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.gestureControl:hover:not(:disabled),
+.gestureControl:focus-visible {
+  border-color: rgba(125, 162, 255, 0.62);
+  background: rgba(22, 31, 49, 0.94);
+}
+
+.gestureControl.isEnabled {
+  border-color: rgba(83, 214, 143, 0.5);
+  color: var(--text);
+}
+
+.gestureControlLabel {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gestureControlState {
+  padding-left: 7px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gestureControl.isEnabled .gestureControlState {
+  color: #78e3a8;
+}
+
+.gestureControl:disabled {
+  opacity: 0.55;
+}
+
 .seekStepControls {
   position: absolute;
   left: 50%;
@@ -426,8 +480,8 @@ input, select {
     transform: translate(-50%, 4px);
   }
 
-  .videoFrame:hover .seekStepControls,
-  .videoFrame:focus-within .seekStepControls {
+  .videoFrame.seekControlsVisible .seekStepControls,
+  .seekStepControls:focus-within {
     opacity: 1;
     pointer-events: auto;
     transform: translate(-50%, 0);
@@ -443,13 +497,49 @@ input, select {
   transform: translate(-50%, 4px);
 }
 
+.theater .gestureControl,
+.fullscreenMode .gestureControl {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+}
+
+.theater .videoFrame.seekControlsVisible .gestureControl,
+.fullscreenMode .videoFrame.seekControlsVisible .gestureControl,
+.theater .gestureControl:focus-visible,
+.fullscreenMode .gestureControl:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .theater .videoFrame.seekControlsVisible .seekStepControls,
 .fullscreenMode .videoFrame.seekControlsVisible .seekStepControls,
-.theater .videoFrame:focus-within .seekStepControls,
-.fullscreenMode .videoFrame:focus-within .seekStepControls {
+.theater .seekStepControls:focus-within,
+.fullscreenMode .seekStepControls:focus-within {
   opacity: 1;
   pointer-events: auto;
   transform: translate(-50%, 0);
+}
+
+@media (max-width: 540px) {
+  .gestureControl {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 11px;
+  }
+
+  .gestureControlLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 .videoPlaceholder {

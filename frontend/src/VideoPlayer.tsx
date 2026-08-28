@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw, RotateCw } from "lucide-react";
 import { API_URL } from "./api";
+import GestureControl from "./gesture/GestureControl";
+import type { GesturePlaybackAction } from "./gesture/useGesturePlaybackControl";
 import type { SyncEvent } from "./types";
 
 type Props = {
@@ -217,6 +219,32 @@ export default function VideoPlayer(props: Props) {
      * authoritative SEEK command as the built-in timeline control.
      */
     video.currentTime = target;
+  };
+
+  const requestGesturePlayback = (
+    action: GesturePlaybackAction
+  ) => {
+    const video = videoRef.current;
+
+    if (!video || isApplyingRemote()) {
+      return;
+    }
+
+    if (action === "pause") {
+      if (!video.paused && !video.ended) {
+        video.pause();
+      }
+
+      return;
+    }
+
+    if (!video.paused || video.ended) {
+      return;
+    }
+
+    void video.play().catch(() => {
+      setNeedsPlaybackStart(true);
+    });
   };
 
   const targetTime = (event: SyncEvent) => {
@@ -753,6 +781,8 @@ export default function VideoPlayer(props: Props) {
           </span>
         </button>
       </div>
+
+      <GestureControl onAction={requestGesturePlayback} />
 
       {overlayMode !== "none" && (
         <div className="syncStatusOverlay">
