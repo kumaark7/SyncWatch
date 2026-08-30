@@ -8,6 +8,7 @@ type AuthContextValue = {
   signIn: (username: string, password: string) => Promise<void>;
   joinGuest: (roomId: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshSession: () => Promise<AuthSession>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -54,6 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signOut: async () => {
       setSession(await logout());
+    },
+    refreshSession: async () => {
+      const nextSession = await getAuthSession();
+      setSession(nextSession);
+      return nextSession;
     }
   }), [session, loading]);
 

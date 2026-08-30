@@ -120,6 +120,10 @@ function AppContent() {
       initialDisplayName={auth.session.displayName}
       sessionClientId={auth.session.clientId}
       onLogout={auth.signOut}
+      confirmAdminSession={async () => {
+        const session = await auth.refreshSession();
+        return session.authenticated && session.role === "ADMIN";
+      }}
     />
   );
 }
@@ -129,13 +133,15 @@ function AuthenticatedApp({
   initialRoomId,
   initialDisplayName,
   sessionClientId,
-  onLogout
+  onLogout,
+  confirmAdminSession
 }: {
   username: string;
   initialRoomId: string;
   initialDisplayName: string | null;
   sessionClientId: string | null;
   onLogout: () => Promise<void>;
+  confirmAdminSession: () => Promise<boolean>;
 }) {
   const [roomId, setRoomId] =
     useState(initialRoomId);
@@ -494,9 +500,14 @@ function AuthenticatedApp({
           }
 
           try {
-            const response = await fetch(`${API_URL}/api/google/code`, {
+            if (!await confirmAdminSession()) {
+              alert("Your SyncWatch session expired. Sign in again to connect Google Drive.");
+              resolve(null);
+              return;
+            }
+
+            const response = await googleApiFetch("/api/google/code", {
               method: "POST",
-              credentials: "include",
               headers: {
                 "Content-Type": "application/json",
                 "X-Requested-With": "XmlHttpRequest"
@@ -529,11 +540,20 @@ function AuthenticatedApp({
     });
   }
 
+  function googleApiFetch(path: string, init: RequestInit = {}) {
+    return fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: "include"
+    });
+  }
+
   async function restoreGoogleDriveConnection() {
     try {
-      const response = await fetch(`${API_URL}/api/google/connection`, {
-        credentials: "include"
-      });
+      if (!await confirmAdminSession()) {
+        return null;
+      }
+
+      const response = await googleApiFetch("/api/google/connection");
       if (!response.ok) {
         return null;
       }
@@ -558,6 +578,11 @@ function AuthenticatedApp({
 
     if (googleConnection && googleConnection.expiresAt > Date.now()) {
       showToast("Google Drive already connected");
+      return;
+    }
+
+    if (!await confirmAdminSession()) {
+      alert("Your SyncWatch session expired. Sign in again to connect Google Drive.");
       return;
     }
 
@@ -683,6 +708,11 @@ function AuthenticatedApp({
   }
 
   async function disconnectGoogleDrive() {
+    if (!await confirmAdminSession()) {
+      alert("Your SyncWatch session expired. Sign in again to disconnect Google Drive.");
+      return;
+    }
+
     if (room?.isHost) {
       const response = await fetch(
         `${API_URL}/api/rooms/${roomId}/file?clientId=${encodeURIComponent(clientId)}`,
@@ -702,9 +732,8 @@ function AuthenticatedApp({
       setTheaterMode(false);
     }
 
-    const disconnectResponse = await fetch(`${API_URL}/api/google/connection`, {
-      method: "DELETE",
-      credentials: "include"
+    const disconnectResponse = await googleApiFetch("/api/google/connection", {
+      method: "DELETE"
     });
     if (!disconnectResponse.ok) {
       alert("Could not disconnect Google Drive.");
