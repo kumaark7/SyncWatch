@@ -5,6 +5,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import jakarta.servlet.http.HttpServletRequest;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
+import xyz.projectdarkhope.syncwatch.google.GoogleOAuthException;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
 
 import java.util.Map;
@@ -15,10 +18,16 @@ public class RoomController {
 
     private final RoomStore rooms;
     private final SimpMessagingTemplate messaging;
+    private final GoogleDriveOAuthService googleOAuth;
 
-    public RoomController(RoomStore rooms, SimpMessagingTemplate messaging) {
+    public RoomController(
+            RoomStore rooms,
+            SimpMessagingTemplate messaging,
+            GoogleDriveOAuthService googleOAuth
+    ) {
         this.rooms = rooms;
         this.messaging = messaging;
+        this.googleOAuth = googleOAuth;
     }
 
     @GetMapping("/health")
@@ -67,7 +76,8 @@ public class RoomController {
     @PostMapping("/rooms/{roomId}/file")
     public ResponseEntity<?> selectFile(
             @PathVariable String roomId,
-            @RequestBody FileSelectionRequest request
+            @RequestBody FileSelectionRequest request,
+            HttpServletRequest browserRequest
     ) {
         if (request.fileId() == null || request.fileId().isBlank()
                 || request.accessToken() == null || request.accessToken().isBlank()
@@ -75,6 +85,13 @@ public class RoomController {
             return ResponseEntity.badRequest().body(
                     Map.of("error", "fileId, accessToken and clientId are required")
             );
+        }
+
+        GoogleDriveOAuthService.Credentials credentials;
+        try {
+            credentials = googleOAuth.refreshConnection(browserRequest);
+        } catch (GoogleOAuthException error) {
+            return ResponseEntity.status(401).body(Map.of("error", error.getMessage()));
         }
 
         return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
@@ -90,7 +107,11 @@ public class RoomController {
                             ? "Google Drive video"
                             : request.fileName()
             );
-            room.setAccessToken(request.accessToken());
+            room.setDriveCredentials(
+                    credentials.accessToken(),
+                    credentials.expiresAt(),
+                    credentials.refreshToken()
+            );
             room.resetPlayback();
 
             messaging.convertAndSend(
@@ -107,13 +128,21 @@ public class RoomController {
     @PutMapping("/rooms/{roomId}/drive-token")
     public ResponseEntity<?> refreshDriveToken(
             @PathVariable String roomId,
-            @RequestBody DriveTokenRequest request
+            @RequestBody DriveTokenRequest request,
+            HttpServletRequest browserRequest
     ) {
         if (request.accessToken() == null || request.accessToken().isBlank()
                 || request.clientId() == null || request.clientId().isBlank()) {
             return ResponseEntity.badRequest().body(
                     Map.of("error", "accessToken and clientId are required")
             );
+        }
+
+        GoogleDriveOAuthService.Credentials credentials;
+        try {
+            credentials = googleOAuth.refreshConnection(browserRequest);
+        } catch (GoogleOAuthException error) {
+            return ResponseEntity.status(401).body(Map.of("error", error.getMessage()));
         }
 
         return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
@@ -129,7 +158,11 @@ public class RoomController {
                 );
             }
 
-            room.setAccessToken(request.accessToken());
+            room.setDriveCredentials(
+                    credentials.accessToken(),
+                    credentials.expiresAt(),
+                    credentials.refreshToken()
+            );
             return ResponseEntity.noContent().build();
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }

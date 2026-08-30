@@ -16,7 +16,7 @@ SyncWatch is a lightweight self-hosted watch-party application for watching Goog
 - Drift correction during playback
 - HTTPS/WSS production support
 - No database required
-- OAuth token kept in browser memory only
+- Persistent Google Drive authorization with backend token refresh
 
 ## Stack
 
@@ -34,6 +34,30 @@ SyncWatch is a lightweight self-hosted watch-party application for watching Goog
 - Nginx
 - systemd
 - Let's Encrypt / Certbot
+
+## Google Drive OAuth
+
+SyncWatch uses Google Identity Services' popup authorization-code flow. The
+browser receives only the short-lived access token needed by Google Picker. The
+backend stores the refresh token in an encrypted, HTTP-only cookie and refreshes
+room streaming access before it expires.
+
+Configure the same OAuth web client on both sides:
+
+```env
+# frontend/.env
+VITE_GOOGLE_CLIENT_ID=your-web-client-id
+VITE_GOOGLE_API_KEY=your-browser-api-key
+VITE_GOOGLE_APP_ID=your-google-cloud-project-number
+
+# Backend process environment
+GOOGLE_CLIENT_ID=your-web-client-id
+GOOGLE_CLIENT_SECRET=your-web-client-secret
+```
+
+For production, also set `SYNCWATCH_COOKIE_SECURE=true` and configure
+`syncwatch.frontend-origin` to the exact public frontend origin. Never place the
+Google client secret in a `VITE_` variable or commit it to Git.
 
 ## How Sync Works
 

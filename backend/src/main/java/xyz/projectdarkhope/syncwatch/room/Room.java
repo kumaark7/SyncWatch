@@ -19,6 +19,8 @@ public class Room {
     private volatile String fileId;
     private volatile String fileName;
     private volatile String accessToken;
+    private volatile long accessTokenExpiresAt;
+    private volatile String driveRefreshToken;
     private volatile String hostClientId;
     private volatile boolean playing;
     private volatile double currentTime;
@@ -40,7 +42,8 @@ public class Room {
     public String getFileName() { return fileName; }
     public void setFileName(String v) { fileName = v; }
     public String getAccessToken() { return accessToken; }
-    public void setAccessToken(String v) { accessToken = v; }
+    public long getAccessTokenExpiresAt() { return accessTokenExpiresAt; }
+    public String getDriveRefreshToken() { return driveRefreshToken; }
     public String getHostClientId() { return hostClientId; }
     public boolean isPlaying() { return playing; }
     public long getSeekVersion() { return seekVersion; }
@@ -69,7 +72,19 @@ public class Room {
         fileId = null;
         fileName = null;
         accessToken = null;
+        accessTokenExpiresAt = 0;
+        driveRefreshToken = null;
         resetPlayback();
+    }
+
+    public synchronized void setDriveCredentials(
+            String accessToken,
+            long accessTokenExpiresAt,
+            String refreshToken
+    ) {
+        this.accessToken = accessToken;
+        this.accessTokenExpiresAt = accessTokenExpiresAt;
+        this.driveRefreshToken = refreshToken;
     }
 
     public synchronized void updatePlayback(double time, boolean playing) {

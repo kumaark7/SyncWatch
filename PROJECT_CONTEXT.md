@@ -368,14 +368,14 @@ http://localhost:5173
 ## Google Auth Philosophy
 
 Current desired behavior:
-- One-time authorization per room/session is enough.
-- Do not save a persistent login session.
-- Do not store refresh tokens.
-- Do not add user accounts.
-- Access token is held only temporarily.
-- Server keeps Drive access token in RAM only.
-- Server restart clears rooms/tokens.
-- If token expires, graceful reauthorization can be added later.
+- Use Google Identity Services' popup authorization-code flow.
+- Keep the short-lived Picker access token in browser memory only.
+- Store the refresh token only in an encrypted, HTTP-only connection cookie.
+- Refresh each room's Drive access token on the backend before it expires.
+- Restore the selected Google connection without another account chooser.
+- Keep room state and active room credentials in server memory.
+- Manual Disconnect revokes Google authorization and clears the cookie.
+- Do not add SyncWatch user accounts or database persistence for Google tokens.
 
 ## Google Picker 401 Issue
 

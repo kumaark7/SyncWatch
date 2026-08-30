@@ -26,9 +26,7 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const DRIVE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";
 
-const TOKEN_EXPIRY_SKEW_MS = 60000;
 const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
-const GOOGLE_CONNECTION_PREFERENCE_KEY = "syncwatch-google-drive-connected";
 
 type GoogleConnection = {
   accessToken: string;
@@ -469,7 +467,7 @@ function AuthenticatedApp({
     return true;
   }
 
-  function requestGoogleAccessToken(prompt = "") {
+  function requestGoogleAuthorizationCode() {
     return new Promise<GoogleConnection | null>((resolve) => {
       if (!CLIENT_ID) {
         alert("Missing VITE_GOOGLE_CLIENT_ID in frontend/.env");
@@ -482,25 +480,44 @@ function AuthenticatedApp({
         return;
       }
 
-      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+      const codeClient = window.google.accounts.oauth2.initCodeClient({
         client_id: CLIENT_ID,
         scope: DRIVE_SCOPE,
-        callback: (tokenResponse: any) => {
-          if (tokenResponse.error || !tokenResponse.access_token) {
-            console.error(
-              "Google OAuth token error:",
-              tokenResponse.error || "No access token returned"
-            );
+        ux_mode: "popup",
+        select_account: false,
+        callback: async (codeResponse: any) => {
+          if (codeResponse.error || !codeResponse.code) {
+            console.error("Google OAuth code error:", codeResponse.error);
             alert("Google Drive authorization failed. Please try again.");
             resolve(null);
             return;
           }
 
-          const expiresInSeconds = Number(tokenResponse.expires_in) || 3600;
-          resolve({
-            accessToken: tokenResponse.access_token,
-            expiresAt: Date.now() + expiresInSeconds * 1000 - TOKEN_EXPIRY_SKEW_MS
-          });
+          try {
+            const response = await fetch(`${API_URL}/api/google/code`, {
+              method: "POST",
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Requested-With": "XmlHttpRequest"
+              },
+              body: JSON.stringify({
+                code: codeResponse.code,
+                redirectUri: window.location.origin
+              })
+            });
+            const result = await response.json().catch(() => null);
+            if (!response.ok || !result?.connected || !result.accessToken) {
+              alert(result?.error || "Could not save Google Drive authorization.");
+              resolve(null);
+              return;
+            }
+            resolve({ accessToken: result.accessToken, expiresAt: result.expiresAt });
+          } catch (error) {
+            console.error("Google OAuth exchange error:", error);
+            alert("Could not contact SyncWatch to save Google Drive authorization.");
+            resolve(null);
+          }
         },
         error_callback: (error: any) => {
           console.error("Google OAuth popup error:", error);
@@ -508,8 +525,30 @@ function AuthenticatedApp({
         }
       });
 
-      tokenClient.requestAccessToken({ prompt });
+      codeClient.requestCode();
     });
+  }
+
+  async function restoreGoogleDriveConnection() {
+    try {
+      const response = await fetch(`${API_URL}/api/google/connection`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const result = await response.json().catch(() => null);
+      if (!result?.connected || !result.accessToken) {
+        return null;
+      }
+      return {
+        accessToken: result.accessToken as string,
+        expiresAt: Number(result.expiresAt)
+      };
+    } catch (error) {
+      console.error("Google Drive connection restore error:", error);
+      return null;
+    }
   }
 
   async function connectGoogleDrive() {
@@ -522,19 +561,13 @@ function AuthenticatedApp({
       return;
     }
 
-    const previouslyConnected =
-      localStorage.getItem(GOOGLE_CONNECTION_PREFERENCE_KEY) === "true";
-    const connection = await requestGoogleAccessToken(
-      previouslyConnected ? "" : "consent"
-    );
+    const connection = await requestGoogleAuthorizationCode();
     if (!connection) {
       return;
     }
 
     if (room?.isHost && room.hasFile) {
-      const updated = await updateRoomDriveToken(
-        connection.accessToken
-      );
+      const updated = await updateRoomDriveToken(connection);
 
       if (!updated) {
         showToast("Could not restore Google Drive access.");
@@ -543,7 +576,6 @@ function AuthenticatedApp({
     }
 
     setGoogleConnection(connection);
-    localStorage.setItem(GOOGLE_CONNECTION_PREFERENCE_KEY, "true");
     showToast("Connected to Google Drive");
   }
 
@@ -556,11 +588,17 @@ function AuthenticatedApp({
       return googleConnection.accessToken;
     }
 
-    showToast("Please connect Google Drive first");
-    return null;
+    const restored = await restoreGoogleDriveConnection();
+    if (!restored) {
+      setGoogleConnection(null);
+      showToast("Please connect Google Drive first");
+      return null;
+    }
+    setGoogleConnection(restored);
+    return restored.accessToken;
   }
 
-  async function updateRoomDriveToken(accessToken: string) {
+  async function updateRoomDriveToken(connection: GoogleConnection) {
     const response = await fetch(
       `${API_URL}/api/rooms/${roomId}/drive-token`,
       {
@@ -570,7 +608,7 @@ function AuthenticatedApp({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          accessToken,
+          accessToken: connection.accessToken,
           clientId
         })
       }
@@ -581,11 +619,9 @@ function AuthenticatedApp({
 
   useEffect(() => {
     if (
-      !googleReady
-      || !room?.isHost
+      !room?.isHost
       || googleConnection
       || googleRestoreAttemptedRef.current
-      || localStorage.getItem(GOOGLE_CONNECTION_PREFERENCE_KEY) !== "true"
     ) {
       return;
     }
@@ -594,13 +630,13 @@ function AuthenticatedApp({
     let cancelled = false;
     setRestoringGoogleConnection(true);
 
-    void requestGoogleAccessToken("").then(async (connection) => {
+    void restoreGoogleDriveConnection().then(async (connection) => {
       if (!connection || cancelled) {
         return;
       }
 
       if (room.hasFile) {
-        const updated = await updateRoomDriveToken(connection.accessToken);
+        const updated = await updateRoomDriveToken(connection);
         if (!updated || cancelled) {
           return;
         }
@@ -616,54 +652,7 @@ function AuthenticatedApp({
     return () => {
       cancelled = true;
     };
-  }, [googleConnection, googleReady, room?.hasFile, room?.isHost, roomId]);
-
-  useEffect(() => {
-    if (
-      !googleReady ||
-      !googleConnection ||
-      !room?.isHost ||
-      !room.hasFile
-    ) {
-      return;
-    }
-
-    const refreshDelay = Math.max(
-      0,
-      googleConnection.expiresAt - Date.now()
-    );
-
-    const timer = window.setTimeout(async () => {
-      const refreshedConnection = await requestGoogleAccessToken("");
-
-      if (!refreshedConnection) {
-        setGoogleConnection(null);
-        showToast("Google Drive connection expired. Reconnect to continue.");
-        return;
-      }
-
-      const updated = await updateRoomDriveToken(
-        refreshedConnection.accessToken
-      );
-
-      if (!updated) {
-        setGoogleConnection(null);
-        showToast("Could not refresh Google Drive access.");
-        return;
-      }
-
-      setGoogleConnection(refreshedConnection);
-    }, refreshDelay);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    clientId,
-    googleConnection?.expiresAt,
-    googleReady,
-    room?.hasFile,
-    room?.isHost,
-    roomId
-  ]);
+  }, [googleConnection, room?.hasFile, room?.isHost, roomId]);
 
   async function selectFile(file: {
     id: string;
@@ -694,15 +683,6 @@ function AuthenticatedApp({
   }
 
   async function disconnectGoogleDrive() {
-    const token = googleConnection?.accessToken;
-    setGoogleConnection(null);
-    localStorage.removeItem(GOOGLE_CONNECTION_PREFERENCE_KEY);
-    googleRestoreAttemptedRef.current = true;
-
-    if (token && googleReady && window.google?.accounts?.oauth2) {
-      window.google.accounts.oauth2.revoke(token, () => {});
-    }
-
     if (room?.isHost) {
       const response = await fetch(
         `${API_URL}/api/rooms/${roomId}/file?clientId=${encodeURIComponent(clientId)}`,
@@ -721,6 +701,18 @@ function AuthenticatedApp({
       setRoom(await response.json());
       setTheaterMode(false);
     }
+
+    const disconnectResponse = await fetch(`${API_URL}/api/google/connection`, {
+      method: "DELETE",
+      credentials: "include"
+    });
+    if (!disconnectResponse.ok) {
+      alert("Could not disconnect Google Drive.");
+      return;
+    }
+
+    setGoogleConnection(null);
+    googleRestoreAttemptedRef.current = true;
 
     showToast("Disconnected from Google Drive");
   }

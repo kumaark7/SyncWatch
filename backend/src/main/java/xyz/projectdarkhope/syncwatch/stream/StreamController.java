@@ -5,6 +5,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.*;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
+import xyz.projectdarkhope.syncwatch.google.GoogleOAuthException;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,6 +18,7 @@ import java.util.List;
 @RestController
 public class StreamController {
     private final RoomStore rooms;
+    private final GoogleDriveOAuthService googleOAuth;
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -26,7 +29,10 @@ public class StreamController {
             "accept-ranges","etag","last-modified"
     );
 
-    public StreamController(RoomStore rooms) { this.rooms = rooms; }
+    public StreamController(RoomStore rooms, GoogleDriveOAuthService googleOAuth) {
+        this.rooms = rooms;
+        this.googleOAuth = googleOAuth;
+    }
 
     @GetMapping("/api/stream/{roomId}")
     public void stream(
@@ -36,9 +42,16 @@ public class StreamController {
     ) throws Exception {
         Room room = rooms.find(roomId).orElse(null);
 
-        if (room == null || !room.hasFile()
-                || room.getAccessToken() == null || room.getAccessToken().isBlank()) {
+        if (room == null || !room.hasFile()) {
             browserResponse.sendError(404);
+            return;
+        }
+
+        String accessToken;
+        try {
+            accessToken = googleOAuth.accessTokenFor(room);
+        } catch (GoogleOAuthException error) {
+            browserResponse.sendError(401, "Google Drive authorization expired");
             return;
         }
 
@@ -50,7 +63,7 @@ public class StreamController {
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .GET()
-                .header("Authorization", "Bearer " + room.getAccessToken())
+                .header("Authorization", "Bearer " + accessToken)
                 .timeout(Duration.ofMinutes(30));
 
         String range = browserRequest.getHeader("Range");
