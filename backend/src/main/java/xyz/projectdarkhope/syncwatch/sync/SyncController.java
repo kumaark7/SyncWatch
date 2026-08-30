@@ -21,11 +21,18 @@ public class SyncController {
     private final RoomStore rooms;
     private final SimpMessagingTemplate messaging;
     private final ChatService chatService;
+    private final RoomPresenceService presence;
 
-    public SyncController(RoomStore rooms, SimpMessagingTemplate messaging, ChatService chatService) {
+    public SyncController(
+            RoomStore rooms,
+            SimpMessagingTemplate messaging,
+            ChatService chatService,
+            RoomPresenceService presence
+    ) {
         this.rooms = rooms;
         this.messaging = messaging;
         this.chatService = chatService;
+        this.presence = presence;
     }
 
     @MessageMapping("/room/{roomId}/control")
@@ -65,7 +72,8 @@ public class SyncController {
         }
 
         if ("JOIN".equals(type)) {
-            Room.ParticipantRegistration registration = room.registerParticipant(
+            Room.ParticipantRegistration registration = presence.registerParticipant(
+                    room,
                     effectiveClientId,
                     participantName,
                     sessionId
