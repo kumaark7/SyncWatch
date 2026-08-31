@@ -18,7 +18,7 @@ import FloatingCallWindow from "./party/call/FloatingCallWindow";
 import useFullscreenState from "./party/call/useFullscreenState";
 import type { PartyTab } from "./party/types";
 import VideoPlayer from "./VideoPlayer";
-import { useRoomSocket } from "./useRoomSocket";
+import { ROOM_CLIENT_ID_STORAGE_KEY, useRoomSocket } from "./useRoomSocket";
 import type { Participant, RoomState } from "./types";
 import "./style.css";
 
@@ -143,23 +143,23 @@ function AuthenticatedApp({
   onLogout: () => Promise<void>;
   confirmAdminSession: () => Promise<boolean>;
 }) {
+  const restoredNameTag = (
+    initialDisplayName
+      ?? (initialRoomId ? sessionStorage.getItem(NAME_TAG_STORAGE_KEY) : null)
+      ?? ""
+  ).trim();
+
   const [roomId, setRoomId] =
     useState(initialRoomId);
 
   const [joinCode, setJoinCode] =
     useState(initialRoomId);
 
-  const [nameTag, setNameTag] = useState(
-    () => initialDisplayName
-      ?? (initialRoomId ? sessionStorage.getItem(NAME_TAG_STORAGE_KEY) : null)
-      ?? ""
-  );
+  const [nameTag, setNameTag] = useState(restoredNameTag);
 
   const [roomName, setRoomName] = useState("");
 
-  const [joinedNameTag, setJoinedNameTag] = useState(
-    () => initialDisplayName?.trim() ?? ""
-  );
+  const [joinedNameTag, setJoinedNameTag] = useState(restoredNameTag);
 
   const [participants, setParticipants] =
     useState<Participant[]>([]);
@@ -209,7 +209,11 @@ function AuthenticatedApp({
     sendCallJoined,
     sendCallLeft,
     mergeChatHistory
-  } = useRoomSocket(roomId, joinedNameTag, sessionClientId);
+  } = useRoomSocket(
+    room?.roomId === roomId ? roomId : "",
+    joinedNameTag,
+    sessionClientId
+  );
 
   const showToast = (message: string) => {
     setToast(message);
@@ -399,6 +403,14 @@ function AuthenticatedApp({
       setGoogleConnection(null);
     }
   }, [room]);
+
+  useEffect(() => {
+    if (room?.roomId !== roomId || !joinedNameTag) {
+      return;
+    }
+
+    sessionStorage.setItem(NAME_TAG_STORAGE_KEY, joinedNameTag);
+  }, [joinedNameTag, room?.roomId, roomId]);
 
   async function createRoom() {
     const cleanedRoomName = roomName.trim() || generateRoomName();
@@ -768,6 +780,8 @@ function AuthenticatedApp({
 
   async function logout() {
     await onLogout();
+    sessionStorage.removeItem(NAME_TAG_STORAGE_KEY);
+    sessionStorage.removeItem(ROOM_CLIENT_ID_STORAGE_KEY);
     window.history.replaceState({}, "", "/");
     setRoom(null);
     setRoomId("");

@@ -5,6 +5,7 @@ import type { SyncEvent } from "./types";
 import type { ChatMessage } from "./party/chat/types";
 
 const wsUrl = () => API_URL.replace(/^http/, "ws") + "/ws";
+export const ROOM_CLIENT_ID_STORAGE_KEY = "syncwatch-client-id";
 
 function makeClientId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -14,14 +15,19 @@ function makeClientId() {
   return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
 }
 
-function getClientId() {
-  const existing = sessionStorage.getItem("syncwatch-client-id");
-  if (existing) 
-  {
+function getClientId(sessionClientId: string | null) {
+  if (sessionClientId) {
+    sessionStorage.setItem(ROOM_CLIENT_ID_STORAGE_KEY, sessionClientId);
+    return sessionClientId;
+  }
+
+  const existing = sessionStorage.getItem(ROOM_CLIENT_ID_STORAGE_KEY);
+  if (existing) {
     return existing;
   }
+
   const id = makeClientId();
-  sessionStorage.setItem("syncwatch-client-id",id);
+  sessionStorage.setItem(ROOM_CLIENT_ID_STORAGE_KEY, id);
   return id;
 }
 
@@ -45,7 +51,7 @@ function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
 
 export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: string | null) {
   const clientRef = useRef<Client | null>(null);
-  const clientIdRef = useRef(sessionClientId || getClientId());
+  const clientIdRef = useRef(getClientId(sessionClientId));
   const roomJoinedRef = useRef(false);
 
   const [connected, setConnected] = useState(false);
