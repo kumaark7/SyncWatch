@@ -27,6 +27,7 @@ const DRIVE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";
 
 const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
+const SESSION_REVALIDATION_INTERVAL_MS = 5 * 60 * 1000;
 
 type GoogleConnection = {
   accessToken: string;
@@ -120,6 +121,8 @@ function AppContent() {
       initialDisplayName={auth.session.displayName}
       sessionClientId={auth.session.clientId}
       onLogout={auth.signOut}
+      authenticatedFetch={auth.authenticatedFetch}
+      revalidateSession={auth.revalidateSession}
       confirmAdminSession={async () => {
         const session = await auth.refreshSession();
         return session.authenticated && session.role === "ADMIN";
@@ -134,6 +137,8 @@ function AuthenticatedApp({
   initialDisplayName,
   sessionClientId,
   onLogout,
+  authenticatedFetch,
+  revalidateSession,
   confirmAdminSession
 }: {
   username: string;
@@ -141,6 +146,11 @@ function AuthenticatedApp({
   initialDisplayName: string | null;
   sessionClientId: string | null;
   onLogout: () => Promise<void>;
+  authenticatedFetch: (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ) => Promise<Response>;
+  revalidateSession: () => Promise<boolean>;
   confirmAdminSession: () => Promise<boolean>;
 }) {
   const restoredNameTag = (
@@ -231,6 +241,48 @@ function AuthenticatedApp({
   const chatVisible = partyTab === "chat" && !partyRailHidden;
 
   useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    let revalidationPending = false;
+
+    const revalidate = async () => {
+      if (revalidationPending) {
+        return;
+      }
+
+      revalidationPending = true;
+      try {
+        await revalidateSession();
+      } catch {
+        // A transient network failure should not discard a still-valid session.
+      } finally {
+        revalidationPending = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void revalidate();
+      }
+    };
+
+    const timer = window.setInterval(
+      () => void revalidate(),
+      SESSION_REVALIDATION_INTERVAL_MS
+    );
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [revalidateSession, roomId]);
+
+  useEffect(() => {
     if (!theaterMode) {
       return;
     }
@@ -296,7 +348,7 @@ function AuthenticatedApp({
       return;
     }
 
-    fetch(
+    authenticatedFetch(
       `${API_URL}/api/rooms/${roomId}?clientId=${encodeURIComponent(
         clientId
       )}`,
@@ -315,7 +367,7 @@ function AuthenticatedApp({
       .catch(() => {
         setRoom(null);
       });
-  }, [roomId, clientId]);
+  }, [authenticatedFetch, roomId, clientId]);
 
   useEffect(() => {
     const joinedRoom = participants.some((participant) => participant.clientId === clientId);
@@ -323,7 +375,7 @@ function AuthenticatedApp({
       return;
     }
 
-    fetch(
+    authenticatedFetch(
       `${API_URL}/api/rooms/${roomId}/chat?clientId=${encodeURIComponent(clientId)}`,
       { credentials: "include" }
     )
@@ -340,7 +392,15 @@ function AuthenticatedApp({
       .catch(() => {
         // History can race the initial room JOIN; live chat still works once connected.
       });
-  }, [roomId, connected, joinedNameTag, clientId, participants, mergeChatHistory]);
+  }, [
+    authenticatedFetch,
+    roomId,
+    connected,
+    joinedNameTag,
+    clientId,
+    participants,
+    mergeChatHistory
+  ]);
   useEffect(() => {
     if (!lastEvent) {
       return;
@@ -424,7 +484,7 @@ function AuthenticatedApp({
       return;
     }
 
-    const response = await fetch(
+    const response = await authenticatedFetch(
       `${API_URL}/api/rooms?clientId=${encodeURIComponent(clientId)}&roomName=${encodeURIComponent(cleanedRoomName)}`,
       {
         method: "POST",
@@ -433,7 +493,9 @@ function AuthenticatedApp({
     );
 
     if (!response.ok) {
-      alert("Could not create room.");
+      if (response.status !== 401) {
+        alert("Could not create room.");
+      }
       return;
     }
 
@@ -455,13 +517,15 @@ function AuthenticatedApp({
       return;
     }
 
-    const response = await fetch(
+    const response = await authenticatedFetch(
       `${API_URL}/api/rooms/${code}?clientId=${encodeURIComponent(clientId)}`,
       { credentials: "include" }
     );
 
     if (!response.ok) {
-      alert("Room not found.");
+      if (response.status !== 401) {
+        alert("Room not found.");
+      }
       return;
     }
 
@@ -513,7 +577,6 @@ function AuthenticatedApp({
 
           try {
             if (!await confirmAdminSession()) {
-              alert("Your SyncWatch session expired. Sign in again to connect Google Drive.");
               resolve(null);
               return;
             }
@@ -531,7 +594,9 @@ function AuthenticatedApp({
             });
             const result = await response.json().catch(() => null);
             if (!response.ok || !result?.connected || !result.accessToken) {
-              alert(result?.error || "Could not save Google Drive authorization.");
+              if (response.status !== 401) {
+                alert(result?.error || "Could not save Google Drive authorization.");
+              }
               resolve(null);
               return;
             }
@@ -553,7 +618,7 @@ function AuthenticatedApp({
   }
 
   function googleApiFetch(path: string, init: RequestInit = {}) {
-    return fetch(`${API_URL}${path}`, {
+    return authenticatedFetch(`${API_URL}${path}`, {
       ...init,
       credentials: "include"
     });
@@ -594,7 +659,6 @@ function AuthenticatedApp({
     }
 
     if (!await confirmAdminSession()) {
-      alert("Your SyncWatch session expired. Sign in again to connect Google Drive.");
       return;
     }
 
@@ -621,6 +685,10 @@ function AuthenticatedApp({
       return null;
     }
 
+    if (!await confirmAdminSession()) {
+      return null;
+    }
+
     if (googleConnection && googleConnection.expiresAt > Date.now()) {
       return googleConnection.accessToken;
     }
@@ -636,7 +704,7 @@ function AuthenticatedApp({
   }
 
   async function updateRoomDriveToken(connection: GoogleConnection) {
-    const response = await fetch(
+    const response = await authenticatedFetch(
       `${API_URL}/api/rooms/${roomId}/drive-token`,
       {
         method: "PUT",
@@ -696,7 +764,11 @@ function AuthenticatedApp({
     name: string;
     accessToken: string;
   }) {
-    const response = await fetch(`${API_URL}/api/rooms/${roomId}/file`, {
+    if (!await confirmAdminSession()) {
+      return;
+    }
+
+    const response = await authenticatedFetch(`${API_URL}/api/rooms/${roomId}/file`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -711,8 +783,10 @@ function AuthenticatedApp({
     });
 
     if (!response.ok) {
-      const result = await response.json().catch(() => null);
-      alert(result?.error || "Could not attach Drive file.");
+      if (response.status !== 401) {
+        const result = await response.json().catch(() => null);
+        alert(result?.error || "Could not attach Drive file.");
+      }
       return;
     }
 
@@ -721,12 +795,11 @@ function AuthenticatedApp({
 
   async function disconnectGoogleDrive() {
     if (!await confirmAdminSession()) {
-      alert("Your SyncWatch session expired. Sign in again to disconnect Google Drive.");
       return;
     }
 
     if (room?.isHost) {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API_URL}/api/rooms/${roomId}/file?clientId=${encodeURIComponent(clientId)}`,
         {
           method: "DELETE",
@@ -735,8 +808,10 @@ function AuthenticatedApp({
       );
 
       if (!response.ok) {
-        const result = await response.json().catch(() => null);
-        alert(result?.error || "Could not disconnect Google Drive.");
+        if (response.status !== 401) {
+          const result = await response.json().catch(() => null);
+          alert(result?.error || "Could not disconnect Google Drive.");
+        }
         return;
       }
 
@@ -748,7 +823,9 @@ function AuthenticatedApp({
       method: "DELETE"
     });
     if (!disconnectResponse.ok) {
-      alert("Could not disconnect Google Drive.");
+      if (disconnectResponse.status !== 401) {
+        alert("Could not disconnect Google Drive.");
+      }
       return;
     }
 
