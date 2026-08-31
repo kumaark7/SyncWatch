@@ -51,7 +51,8 @@ function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
 
 export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: string | null) {
   const clientRef = useRef<Client | null>(null);
-  const clientIdRef = useRef(getClientId(sessionClientId));
+  const [clientId, setClientId] = useState(() => getClientId(sessionClientId));
+  const clientIdRef = useRef(clientId);
   const roomJoinedRef = useRef(false);
 
   const [connected, setConnected] = useState(false);
@@ -59,6 +60,24 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
   const [lastEvent, setLastEvent] = useState<SyncEvent | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [lastChatMessage, setLastChatMessage] = useState<ChatMessage | null>(null);
+
+  const ensureClientIdentity = useCallback(() => {
+    if (clientIdRef.current) {
+      return clientIdRef.current;
+    }
+
+    const nextClientId = getClientId(sessionClientId);
+    clientIdRef.current = nextClientId;
+    setClientId(nextClientId);
+    return nextClientId;
+  }, [sessionClientId]);
+
+  const resetClientIdentity = useCallback(() => {
+    sessionStorage.removeItem(ROOM_CLIENT_ID_STORAGE_KEY);
+    const nextClientId = getClientId(sessionClientId);
+    clientIdRef.current = nextClientId;
+    setClientId(nextClientId);
+  }, [sessionClientId]);
 
   useEffect(() => {
     setChatMessages([]);
@@ -217,7 +236,9 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     chatReady: connected && roomJoined,
     lastEvent,
     sendControl,
-    clientId: clientIdRef.current,
+    clientId,
+    ensureClientIdentity,
+    resetClientIdentity,
     chatMessages,
     lastChatMessage,
     sendChatMessage,
