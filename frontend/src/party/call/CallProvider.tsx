@@ -16,6 +16,12 @@ import {
   useState,
   type ReactNode
 } from "react";
+import {
+  loadCallInputDevices,
+  saveCallInputDevices,
+  selectCallInputDevice,
+  type CallInputDeviceKind
+} from "./callDevices";
 import { requestCallToken } from "./livekitApi";
 import {
   createAudioCaptureOptions,
@@ -86,14 +92,19 @@ export default function CallProvider({
 }: Props) {
   const [qualitySettings, setQualitySettings] = useState(loadCallQualitySettings);
   const [supportedAudioProcessing] = useState(getSupportedAudioProcessing);
+  const preferredInputDevicesRef = useRef(loadCallInputDevices());
   const [room] = useState(() => new Room({
     adaptiveStream: true,
     dynacast: true,
     audioCaptureDefaults: createAudioCaptureOptions(
       qualitySettings,
-      supportedAudioProcessing
+      supportedAudioProcessing,
+      preferredInputDevicesRef.current.audioinput
     ),
-    videoCaptureDefaults: createVideoCaptureOptions(qualitySettings.videoQuality)
+    videoCaptureDefaults: createVideoCaptureOptions(
+      qualitySettings.videoQuality,
+      preferredInputDevicesRef.current.videoinput
+    )
   }));
   const [status, setStatus] = useState<CallStatus>("idle");
   const [participantCount, setParticipantCount] = useState(0);
@@ -126,6 +137,46 @@ export default function CallProvider({
   useEffect(() => {
     mutedRemoteParticipantIdsRef.current = mutedRemoteParticipantIds;
   }, [mutedRemoteParticipantIds]);
+
+  const ensureInputDevice = useCallback(async (
+    kind: CallInputDeviceKind,
+    requestPermissions: boolean
+  ) => {
+    const devices = await Room.getLocalDevices(kind, requestPermissions);
+    const selected = selectCallInputDevice(
+      devices,
+      preferredInputDevicesRef.current[kind],
+      room.getActiveDevice(kind)
+    );
+
+    if (!selected?.deviceId) {
+      if (requestPermissions) {
+        throw new Error(`No ${kind === "videoinput" ? "camera" : "microphone"} is available`);
+      }
+      return undefined;
+    }
+
+    if (room.getActiveDevice(kind) !== selected.deviceId) {
+      const switched = await room.switchActiveDevice(kind, selected.deviceId);
+      if (!switched) {
+        throw new Error(`Could not select ${kind}`);
+      }
+    }
+
+    preferredInputDevicesRef.current = {
+      ...preferredInputDevicesRef.current,
+      [kind]: selected.deviceId
+    };
+    saveCallInputDevices(preferredInputDevicesRef.current);
+    return selected.deviceId;
+  }, [room]);
+
+  useEffect(() => {
+    void Promise.allSettled([
+      ensureInputDevice("audioinput", false),
+      ensureInputDevice("videoinput", false)
+    ]);
+  }, [ensureInputDevice]);
 
   useEffect(() => {
     const updateParticipantCount = () => {
@@ -306,10 +357,11 @@ export default function CallProvider({
       return;
     }
 
+    const deviceId = await ensureInputDevice("audioinput", true);
     const options = createAudioCaptureOptions(
       qualitySettings,
       supportedAudioProcessing,
-      room.getActiveDevice("audioinput")
+      deviceId
     );
     await room.localParticipant.setMicrophoneEnabled(true, options);
     try {
@@ -317,7 +369,7 @@ export default function CallProvider({
     } catch {
       setError("Some microphone processing options are not supported by this browser");
     }
-  }, [applyAudioProcessing, qualitySettings, room, supportedAudioProcessing]);
+  }, [applyAudioProcessing, ensureInputDevice, qualitySettings, room, supportedAudioProcessing]);
 
   const setCameraEnabled = useCallback(async (enabled: boolean) => {
     setError(null);
@@ -326,9 +378,10 @@ export default function CallProvider({
       return;
     }
 
+    const deviceId = await ensureInputDevice("videoinput", true);
     const options = createVideoCaptureOptions(
       qualitySettings.videoQuality,
-      room.getActiveDevice("videoinput")
+      deviceId
     );
     const existingTrack = room.localParticipant
       .getTrackPublication(Track.Source.Camera)
@@ -339,7 +392,7 @@ export default function CallProvider({
     } else {
       await room.localParticipant.setCameraEnabled(true, options);
     }
-  }, [qualitySettings.videoQuality, room]);
+  }, [ensureInputDevice, qualitySettings.videoQuality, room]);
 
   const setAudioProcessing = useCallback(async (
     setting: AudioProcessingSetting,
@@ -404,6 +457,12 @@ export default function CallProvider({
     if (!switched) {
       throw new Error(`Could not switch ${kind}`);
     }
+
+    preferredInputDevicesRef.current = {
+      ...preferredInputDevicesRef.current,
+      [kind]: deviceId
+    };
+    saveCallInputDevices(preferredInputDevicesRef.current);
 
     if (kind === "audioinput") {
       await applyAudioProcessing().catch(() => {
