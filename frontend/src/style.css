@@ -1670,6 +1670,28 @@ input, select {
   background: rgba(79, 124, 255, 0.16);
 }
 
+.callControls .callControlMain.muted {
+  border-color: rgba(255, 107, 117, 0.42);
+  color: #ffb4ba;
+}
+
+.callPushToTalkButton {
+  position: relative;
+}
+
+.callPushToTalkButton .callControlStateDot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid rgba(7, 10, 16, 0.9);
+  border-radius: 50%;
+  background: #86efac;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.72);
+  pointer-events: none;
+}
+
 .callControls .callPushToTalkButton.holding {
   border-color: rgba(74, 222, 128, 0.7);
   background: rgba(74, 222, 128, 0.18);
@@ -1968,6 +1990,7 @@ input, select {
 .floatingCallGrid .callTile {
   min-height: 0;
   border-radius: 9px;
+  container: floating-call-tile / inline-size;
 }
 
 .floatingCallGrid[data-count="1"],
@@ -2005,30 +2028,57 @@ input, select {
   }
 }
 
+@container floating-call-tile (max-width: 280px) {
+  .callControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container floating-call-tile (min-width: 281px) {
+  .callControls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.floatingCallGrid .callControls {
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+}
+
+.floatingCallGrid .callControlsWrap {
+  right: 5px;
+  bottom: 32px;
+  left: 5px;
+}
+
+.floatingCallGrid .callControls button {
+  min-height: 42px;
+  border-radius: 8px;
+  touch-action: manipulation;
+}
+
+.floatingCallGrid .callControlIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.floatingCallGrid .callControlCluster {
+  grid-template-columns: minmax(0, 1fr) 28px;
+}
+
+.floatingCallGrid .callDeviceMenuTrigger {
+  width: 28px;
+  min-width: 28px;
+}
+
+.floatingCallGrid .callDeviceMenuTrigger svg {
+  width: 17px;
+  height: 17px;
+}
+
 @media (hover: hover) and (pointer: fine) {
   @container floating-call (max-width: 280px) {
-    .floatingCallGrid .callControls {
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 3px;
-      padding: 3px;
-      border-radius: 8px;
-    }
-
-    .floatingCallGrid .callControlsWrap {
-      right: 4px;
-      bottom: 30px;
-      left: 4px;
-    }
-
-    .floatingCallGrid .callControls button {
-      min-height: 27px;
-      border-radius: 6px;
-    }
-
-    .floatingCallGrid .callControlIcon svg {
-      width: 14px;
-      height: 14px;
-    }
 
     .floatingCallGrid .callRemoteAudioButton,
     .floatingCallGrid .callListenerMuteNotice {
@@ -2072,24 +2122,10 @@ input, select {
   }
 
   @container floating-call (max-height: 180px) {
-    .floatingCallGrid .callControls {
-      gap: 3px;
-      padding: 3px;
-    }
-
     .floatingCallGrid .callControlsWrap {
       right: 4px;
-      bottom: 29px;
+      bottom: 30px;
       left: 4px;
-    }
-
-    .floatingCallGrid .callControls button {
-      min-height: 26px;
-    }
-
-    .floatingCallGrid .callControlIcon svg {
-      width: 13px;
-      height: 13px;
     }
   }
 }

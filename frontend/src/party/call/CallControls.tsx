@@ -22,6 +22,28 @@ type Props = {
   onInteract: () => void;
 };
 
+const PUSH_TO_TALK_MANUAL_OFF_KEY = "syncwatch.call.push-to-talk-manual-off.v1";
+
+function loadPushToTalkManualOff() {
+  try {
+    return window.sessionStorage.getItem(PUSH_TO_TALK_MANUAL_OFF_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function storePushToTalkManualOff(manuallyDisabled: boolean) {
+  try {
+    if (manuallyDisabled) {
+      window.sessionStorage.setItem(PUSH_TO_TALK_MANUAL_OFF_KEY, "true");
+    } else {
+      window.sessionStorage.removeItem(PUSH_TO_TALK_MANUAL_OFF_KEY);
+    }
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+}
+
 export default function CallControls({ onLeave, onHideSelf, onInteract }: Props) {
   const {
     isMicrophoneEnabled,
@@ -35,6 +57,9 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
   const [busyControl, setBusyControl] = useState<"mic" | "camera" | "leave" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState<"audioinput" | "videoinput" | "quality" | null>(null);
+  const [pushToTalkManuallyDisabled, setPushToTalkManuallyDisabled] = useState(
+    loadPushToTalkManualOff
+  );
   const [pushToTalkEnabled, setPushToTalkEnabled] = useState(false);
   const [pushToTalkActive, setPushToTalkActive] = useState(false);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -57,6 +82,23 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
     microphoneOperationRef.current = operation.catch(() => undefined);
     return operation;
   }, []);
+
+  const setPushToTalkMode = useCallback((enabled: boolean) => {
+    pushToTalkEnabledRef.current = enabled;
+    pushToTalkActiveRef.current = false;
+    setPushToTalkEnabled(enabled);
+    setPushToTalkActive(false);
+  }, []);
+
+  useEffect(() => {
+    if (
+      !isMicrophoneEnabled
+      && !pushToTalkManuallyDisabled
+      && !pushToTalkEnabledRef.current
+    ) {
+      setPushToTalkMode(true);
+    }
+  }, [isMicrophoneEnabled, pushToTalkManuallyDisabled, setPushToTalkMode]);
 
   useEffect(() => {
     if (!openMenu) {
@@ -152,13 +194,16 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
   async function toggleMicrophone() {
     setBusyControl("mic");
     setError(null);
-    pushToTalkEnabledRef.current = false;
-    pushToTalkActiveRef.current = false;
-    setPushToTalkEnabled(false);
-    setPushToTalkActive(false);
+    const enableMicrophone = !isMicrophoneEnabled;
+    if (enableMicrophone) {
+      setPushToTalkMode(false);
+    }
     try {
-      await queueMicrophoneState(!isMicrophoneEnabled);
+      await queueMicrophoneState(enableMicrophone);
     } catch {
+      if (!pushToTalkManuallyDisabled) {
+        setPushToTalkMode(true);
+      }
       setError("Microphone permission was not available");
     } finally {
       setBusyControl(null);
@@ -169,16 +214,15 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
     setBusyControl("mic");
     setError(null);
     const enabled = !pushToTalkEnabled;
-    pushToTalkEnabledRef.current = enabled;
-    pushToTalkActiveRef.current = false;
-    setPushToTalkActive(false);
+    const manuallyDisabled = !enabled;
+    setPushToTalkManuallyDisabled(manuallyDisabled);
+    storePushToTalkManualOff(manuallyDisabled);
+    setPushToTalkMode(enabled);
 
     try {
       await queueMicrophoneState(false);
-      setPushToTalkEnabled(enabled);
     } catch {
-      pushToTalkEnabledRef.current = false;
-      setPushToTalkEnabled(false);
+      setPushToTalkMode(false);
       setError("Could not enable Push to Talk");
     } finally {
       setBusyControl(null);
@@ -213,7 +257,7 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
       <div ref={controlsRef} className="callControls" aria-label="Call controls">
         <div className="callControlCluster">
           <button
-            className={`callControlIcon callControlMain ${isMicrophoneEnabled ? "active" : ""}`}
+            className={`callControlIcon callControlMain ${isMicrophoneEnabled ? "active" : "muted"}`}
             disabled={busyControl !== null}
             aria-label={isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"}
             aria-pressed={isMicrophoneEnabled}
@@ -229,8 +273,8 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
           <button
             ref={microphoneMenuButtonRef}
             className="callDeviceMenuTrigger"
-            aria-label="Choose microphone"
-            title="Choose microphone"
+            aria-label="Microphone and audio settings"
+            title="Microphone and audio settings"
             aria-haspopup="menu"
             aria-expanded={openMenu === "audioinput"}
             onFocus={onInteract}
@@ -256,14 +300,15 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
         <button
           className={`callControlIcon callPushToTalkButton ${pushToTalkEnabled ? "active" : ""} ${pushToTalkActive ? "holding" : ""}`}
           disabled={busyControl !== null}
-          aria-label="Push to Talk (P)"
+          aria-label={`Push to Talk (P), ${pushToTalkEnabled ? "enabled" : "disabled"}`}
           aria-pressed={pushToTalkEnabled}
-          title="Push to Talk (P)"
+          title={`Push to Talk (P) - ${pushToTalkEnabled ? "enabled" : "disabled"}`}
           onFocus={onInteract}
           onPointerDown={onInteract}
           onClick={() => void togglePushToTalk()}
         >
           <Radio size={17} strokeWidth={2.2} aria-hidden="true" />
+          {pushToTalkEnabled && <span className="callControlStateDot" aria-hidden="true" />}
         </button>
         <div className="callControlCluster">
           <button
