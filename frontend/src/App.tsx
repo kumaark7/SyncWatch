@@ -15,9 +15,11 @@ import ChatToastStack from "./party/chat/ChatToast";
 import type { ChatMessage } from "./party/chat/types";
 import CallProvider from "./party/call/CallProvider";
 import FloatingCallWindow from "./party/call/FloatingCallWindow";
+import PushToTalkProvider from "./party/call/PushToTalkProvider";
 import useFullscreenState from "./party/call/useFullscreenState";
 import type { PartyTab } from "./party/types";
-import VideoPlayer from "./VideoPlayer";
+import RoomKeyboardShortcuts from "./RoomKeyboardShortcuts";
+import VideoPlayer, { type VideoPlayerHandle } from "./VideoPlayer";
 import { ROOM_CLIENT_ID_STORAGE_KEY, useRoomSocket } from "./useRoomSocket";
 import type { Participant, RoomState } from "./types";
 import "./style.css";
@@ -193,6 +195,7 @@ function AuthenticatedApp({
     useState(false);
 
   const appShellRef = useRef<HTMLElement>(null);
+  const videoPlayerRef = useRef<VideoPlayerHandle>(null);
   const lastUnreadMessageIdRef = useRef<string | null>(null);
   const fullscreenElement = useFullscreenState();
 
@@ -1043,78 +1046,92 @@ function AuthenticatedApp({
           onCallJoined={sendCallJoined}
           onCallLeft={sendCallLeft}
         >
-          <section className="watchLayout">
-            <div className="watchColumn">
-              <section className="playerSurface">
-                <VideoPlayer
-                  roomId={roomId}
-                  hasFile={room.hasFile}
+          <PushToTalkProvider>
+            <RoomKeyboardShortcuts
+              playerRef={videoPlayerRef}
+              onToggleChat={() => {
+                setPartyTab((current) => current === "chat" ? "people" : "chat");
+                if (partyTab !== "chat") {
+                  setChatUnreadCount(0);
+                }
+              }}
+              onToggleFullscreen={() => void toggleContainerFullscreen()}
+              onError={showToast}
+            />
+            <section className="watchLayout">
+              <div className="watchColumn">
+                <section className="playerSurface">
+                  <VideoPlayer
+                    ref={videoPlayerRef}
+                    roomId={roomId}
+                    hasFile={room.hasFile}
+                    fileName={room.fileName}
+                    initialTime={room.currentTime}
+                    initialPlaying={room.playing}
+                    syncEvent={lastEvent?.type === "PARTICIPANTS" ? null : lastEvent}
+                    onControl={sendControl}
+                    clientId={clientId}
+                    isHost={room.isHost}
+                  />
+
+                  {!room.hasFile && googleActions && (
+                    <div className="emptyPlayerAction">
+                      {googleConnection ? (
+                        <DrivePicker
+                          disabled={!googleReady}
+                          getAccessToken={getValidGoogleAccessToken}
+                          onSelected={selectFile}
+                        />
+                      ) : googleActions}
+                    </div>
+                  )}
+                </section>
+
+                <MediaInfo
                   fileName={room.fileName}
-                  initialTime={room.currentTime}
-                  initialPlaying={room.playing}
-                  syncEvent={lastEvent?.type === "PARTICIPANTS" ? null : lastEvent}
-                  onControl={sendControl}
-                  clientId={clientId}
+                  googleConnected={Boolean(googleConnection)}
                   isHost={room.isHost}
+                  googleActions={googleActions}
                 />
+              </div>
 
-                {!room.hasFile && googleActions && (
-                  <div className="emptyPlayerAction">
-                    {googleConnection ? (
-                      <DrivePicker
-                        disabled={!googleReady}
-                        getAccessToken={getValidGoogleAccessToken}
-                        onSelected={selectFile}
-                      />
-                    ) : googleActions}
-                  </div>
-                )}
-              </section>
+              {!partyRailHidden && (
+                <PartyPanel
+                  roomId={roomId}
+                  participants={participants}
+                  clientId={clientId}
+                  connected={chatReady}
+                  chatMessages={chatMessages}
+                  activeTab={partyTab}
+                  unreadCount={chatUnreadCount}
+                  selfViewHidden={selfViewHidden}
+                  onTabChange={setPartyTab}
+                  onClearUnread={() => setChatUnreadCount(0)}
+                  onToggleSelfView={() => setSelfViewHidden((hidden) => !hidden)}
+                  onSendChat={sendChatMessage}
+                  onChatError={showToast}
+                  onCopyRoom={() => void copyRoomCode()}
+                  onCopyInvite={() => void copyInvite()}
+                />
+              )}
+            </section>
 
-              <MediaInfo
-                fileName={room.fileName}
-                googleConnected={Boolean(googleConnection)}
-                isHost={room.isHost}
-                googleActions={googleActions}
-              />
-            </div>
+            <FloatingCallWindow
+              roomId={roomId}
+              visible={theaterMode || fullscreenCanHostOverlay}
+              selfViewHidden={selfViewHidden}
+              onToggleSelfView={() => setSelfViewHidden((hidden) => !hidden)}
+            />
 
-            {!partyRailHidden && (
-              <PartyPanel
-                roomId={roomId}
-                participants={participants}
-                clientId={clientId}
-                connected={chatReady}
-                chatMessages={chatMessages}
-                activeTab={partyTab}
-                unreadCount={chatUnreadCount}
-                selfViewHidden={selfViewHidden}
-                onTabChange={setPartyTab}
-                onClearUnread={() => setChatUnreadCount(0)}
-                onToggleSelfView={() => setSelfViewHidden((hidden) => !hidden)}
-                onSendChat={sendChatMessage}
-                onChatError={showToast}
-                onCopyRoom={() => void copyRoomCode()}
-                onCopyInvite={() => void copyInvite()}
-              />
-            )}
-          </section>
-
-          <FloatingCallWindow
-            roomId={roomId}
-            visible={theaterMode || fullscreenCanHostOverlay}
-            selfViewHidden={selfViewHidden}
-            onToggleSelfView={() => setSelfViewHidden((hidden) => !hidden)}
-          />
-
-          <ChatToastStack
-            key={roomId}
-            message={lastChatMessage}
-            clientId={clientId}
-            chatVisible={chatVisible}
-            suspended={fullscreenActive && !fullscreenCanHostOverlay}
-            onOpenChat={!partyRailHidden ? () => setPartyTab("chat") : undefined}
-          />
+            <ChatToastStack
+              key={roomId}
+              message={lastChatMessage}
+              clientId={clientId}
+              chatVisible={chatVisible}
+              suspended={fullscreenActive && !fullscreenCanHostOverlay}
+              onOpenChat={!partyRailHidden ? () => setPartyTab("chat") : undefined}
+            />
+          </PushToTalkProvider>
         </CallProvider>
       )}
 

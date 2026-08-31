@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState
+} from "react";
 import { RotateCcw, RotateCw } from "lucide-react";
 import { API_URL } from "./api";
 import GestureControl from "./gesture/GestureControl";
@@ -21,6 +27,12 @@ type Props = {
   isHost: boolean;
 };
 
+export type VideoPlayerHandle = {
+  togglePlayback: () => void;
+  seekBy: (offsetSeconds: number) => void;
+  changeVolumeBy: (offset: number) => void;
+};
+
 const IGNORE_DRIFT = 0.25;
 const HARD_SEEK_DRIFT = 1.5;
 const FAST_RATE = 1.03;
@@ -36,7 +48,10 @@ type OverlayMode =
   | "guest-paused"
   | "buffering";
 
-export default function VideoPlayer(props: Props) {
+const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
+  props,
+  ref
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteUntil = useRef(0);
   const applyingRemoteRef = useRef(false);
@@ -246,6 +261,31 @@ export default function VideoPlayer(props: Props) {
       setNeedsPlaybackStart(true);
     });
   };
+
+  useImperativeHandle(ref, () => ({
+    togglePlayback: () => {
+      const video = videoRef.current;
+
+      if (!video) {
+        return;
+      }
+
+      requestGesturePlayback(video.paused ? "play" : "pause");
+    },
+    seekBy: requestSynchronizedSeek,
+    changeVolumeBy: (offset) => {
+      const video = videoRef.current;
+
+      if (!video) {
+        return;
+      }
+
+      video.volume = Math.min(
+        1,
+        Math.max(0, Math.round((video.volume + offset) * 100) / 100)
+      );
+    }
+  }));
 
   const targetTime = (event: SyncEvent) => {
     if (!event.playing) {
@@ -860,4 +900,6 @@ export default function VideoPlayer(props: Props) {
       )}
     </div>
   );
-}
+});
+
+export default VideoPlayer;
