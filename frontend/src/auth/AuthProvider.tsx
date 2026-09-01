@@ -7,13 +7,18 @@ import {
   useState
 } from "react";
 import type { ReactNode } from "react";
-import { getAuthSession, joinAsGuest, login, logout, type AuthSession } from "./authApi";
+import { getAuthSession, login, logout, signUp, type AuthSession } from "./authApi";
 
 type AuthContextValue = {
   session: AuthSession;
   loading: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
-  joinGuest: (roomId: string, displayName: string) => Promise<void>;
+  signIn: (identifier: string, password: string) => Promise<void>;
+  signUp: (
+    username: string,
+    email: string,
+    password: string,
+    confirmPassword: string
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<AuthSession>;
   revalidateSession: () => Promise<boolean>;
@@ -27,7 +32,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const ANONYMOUS_SESSION: AuthSession = {
   authenticated: false,
+  userId: null,
   username: null,
+  email: null,
   role: null,
   allowedRoomId: null,
   displayName: null,
@@ -91,11 +98,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     session,
     loading,
-    signIn: async (username, password) => {
-      setSession(await login(username, password));
+    signIn: async (identifier, password) => {
+      setSession(await login(identifier, password));
     },
-    joinGuest: async (roomId, displayName) => {
-      setSession(await joinAsGuest(roomId, displayName));
+    signUp: async (username, email, password, confirmPassword) => {
+      setSession(await signUp(username, email, password, confirmPassword));
     },
     signOut: async () => {
       setSession(await logout());

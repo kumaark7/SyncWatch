@@ -22,46 +22,12 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
         Map<String, Object> attributes = accessor.getSessionAttributes();
         if (attributes == null
-                || !Boolean.TRUE.equals(attributes.get(AuthService.SESSION_AUTHENTICATED))) {
+                || !Boolean.TRUE.equals(attributes.get(AuthService.SESSION_AUTHENTICATED))
+                || !AuthService.ROLE_USER.equals(attributes.get(AuthService.SESSION_ROLE))
+                || !(attributes.get(AuthService.SESSION_USER_ID) instanceof String)) {
             throw new MessageDeliveryException("Authentication required");
         }
 
-        Object role = attributes.get(AuthService.SESSION_ROLE);
-        if (role == null
-                || AuthService.ROLE_ADMIN.equals(role)
-                || command == StompCommand.CONNECT) {
-            return message;
-        }
-
-        if (!AuthService.ROLE_GUEST.equals(role)) {
-            throw new MessageDeliveryException("Unsupported session role");
-        }
-
-        Object roomValue = attributes.get(AuthService.SESSION_GUEST_ROOM);
-        String roomId = roomValue instanceof String ? (String) roomValue : null;
-        if (command != StompCommand.SEND && command != StompCommand.SUBSCRIBE) {
-            return message;
-        }
-
-        String destination = accessor.getDestination();
-        if (roomId == null || destination == null || !isAllowedGuestDestination(destination, roomId, command)) {
-            throw new MessageDeliveryException("Guest WebSocket access is limited to the invited room");
-        }
-
         return message;
-    }
-
-    private boolean isAllowedGuestDestination(String destination, String roomId, StompCommand command) {
-        if (command == StompCommand.SEND) {
-            return destination.equals("/app/room/" + roomId + "/control")
-                    || destination.equals("/app/rooms/" + roomId + "/chat");
-        }
-
-        if (command == StompCommand.SUBSCRIBE) {
-            return destination.equals("/topic/room/" + roomId)
-                    || destination.equals("/topic/rooms/" + roomId + "/chat");
-        }
-
-        return true;
     }
 }

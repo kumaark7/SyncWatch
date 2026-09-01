@@ -4,6 +4,7 @@ target/
 .env
 frontend/.env
 *.log
+syncwatch-users*.db
 .idea/
 .vscode/
 

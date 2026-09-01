@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
-import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
 import ConnectionStatus from "./components/ConnectionStatus";
 import FullscreenToggle from "./components/FullscreenToggle";
@@ -61,13 +60,20 @@ function googleApisReady() {
 function AppContent() {
   const auth = useAuth();
   const inviteRoomId = roomFromUrl();
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [showGuestJoin, setShowGuestJoin] = useState(false);
   const [homeJoinCode, setHomeJoinCode] = useState("");
 
-  async function joinGuest(roomId: string, displayName: string) {
-    await auth.joinGuest(roomId, displayName);
-    window.history.replaceState({}, "", `/room/${roomId}`);
+  async function authenticate(action: () => Promise<void>) {
+    const pendingRoomId = inviteRoomId;
+    setHomeJoinCode(pendingRoomId);
+    window.history.replaceState({}, "", "/");
+    try {
+      await action();
+    } catch (cause) {
+      if (pendingRoomId) {
+        window.history.replaceState({}, "", `/room/${pendingRoomId}`);
+      }
+      throw cause;
+    }
   }
 
   if (auth.loading) {
@@ -79,48 +85,15 @@ function AppContent() {
   }
 
   if (!auth.session.authenticated) {
-    if (inviteRoomId && !showAdminLogin) {
-      return (
-        <GuestJoinPage
-          roomId={inviteRoomId}
-          onJoin={joinGuest}
-          onAdminLogin={() => setShowAdminLogin(true)}
-        />
-      );
-    }
-
-    if (showGuestJoin && !showAdminLogin) {
-      return (
-        <GuestJoinPage
-          roomId=""
-          onJoin={joinGuest}
-          onAdminLogin={() => {
-            setShowGuestJoin(false);
-            setShowAdminLogin(true);
-          }}
-        />
-      );
-    }
-
     return (
       <LoginPage
-        onLogin={async (username, password) => {
-          const pendingRoomId = inviteRoomId;
-          setHomeJoinCode(pendingRoomId);
-          window.history.replaceState({}, "", "/");
-          try {
-            await auth.signIn(username, password);
-          } catch (cause) {
-            if (pendingRoomId) {
-              window.history.replaceState({}, "", `/room/${pendingRoomId}`);
-            }
-            throw cause;
-          }
-        }}
-        onGuestJoin={() => {
-          setShowAdminLogin(false);
-          setShowGuestJoin(true);
-        }}
+        inviteRoomId={inviteRoomId}
+        onSignIn={(identifier, password) => authenticate(
+          () => auth.signIn(identifier, password)
+        )}
+        onSignUp={(username, email, password, confirmPassword) => authenticate(
+          () => auth.signUp(username, email, password, confirmPassword)
+        )}
       />
     );
   }
@@ -128,28 +101,16 @@ function AppContent() {
   return (
     <AuthenticatedApp
       username={auth.session.username || "User"}
-      role={auth.session.role}
-      allowedRoomId={auth.session.allowedRoomId}
-      initialRoomId={
-        auth.session.role === "GUEST"
-          ? inviteRoomId === auth.session.allowedRoomId
-            ? auth.session.allowedRoomId || ""
-            : ""
-          : inviteRoomId
-      }
-      initialJoinCode={
-        auth.session.role === "GUEST"
-          ? auth.session.allowedRoomId || ""
-          : homeJoinCode || inviteRoomId
-      }
-      initialDisplayName={auth.session.displayName}
-      sessionClientId={auth.session.clientId}
+      initialRoomId={inviteRoomId}
+      initialJoinCode={homeJoinCode || inviteRoomId}
+      initialDisplayName={null}
+      sessionClientId={null}
       onLogout={auth.signOut}
       authenticatedFetch={auth.authenticatedFetch}
       revalidateSession={auth.revalidateSession}
-      confirmAdminSession={async () => {
+      confirmAuthenticatedSession={async () => {
         const session = await auth.refreshSession();
-        return session.authenticated && session.role === "ADMIN";
+        return session.authenticated;
       }}
     />
   );
@@ -157,8 +118,6 @@ function AppContent() {
 
 function AuthenticatedApp({
   username,
-  role,
-  allowedRoomId,
   initialRoomId,
   initialJoinCode,
   initialDisplayName,
@@ -166,11 +125,9 @@ function AuthenticatedApp({
   onLogout,
   authenticatedFetch,
   revalidateSession,
-  confirmAdminSession
+  confirmAuthenticatedSession
 }: {
   username: string;
-  role: "ADMIN" | "GUEST" | null;
-  allowedRoomId: string | null;
   initialRoomId: string;
   initialJoinCode: string;
   initialDisplayName: string | null;
@@ -181,7 +138,7 @@ function AuthenticatedApp({
     init?: RequestInit
   ) => Promise<Response>;
   revalidateSession: () => Promise<boolean>;
-  confirmAdminSession: () => Promise<boolean>;
+  confirmAuthenticatedSession: () => Promise<boolean>;
 }) {
   const restoredNameTag = (
     initialDisplayName
@@ -251,7 +208,8 @@ function AuthenticatedApp({
     sendCallLeft,
     mergeChatHistory,
     ensureClientIdentity,
-    resetClientIdentity
+    resetClientIdentity,
+    clearClientIdentity
   } = useRoomSocket(
     room?.roomId === roomId ? roomId : "",
     joinedNameTag,
@@ -439,8 +397,21 @@ function AuthenticatedApp({
       return;
     }
 
+    if (lastEvent.type === "ROOM_CLOSED") {
+      if (fullscreenCanHostOverlay) {
+        void document.exitFullscreen().catch(() => undefined);
+      }
+      returnToHome(true);
+      return;
+    }
+
     if (lastEvent.type === "PARTICIPANTS") {
       setParticipants(lastEvent.participants ?? []);
+      setRoom((previous) => previous ? {
+        ...previous,
+        hostAssigned: Boolean(lastEvent.hostClientId),
+        isHost: lastEvent.hostClientId === clientId
+      } : previous);
       return;
     }
 
@@ -494,6 +465,7 @@ function AuthenticatedApp({
   useEffect(() => {
     if (room && !room.isHost) {
       setGoogleConnection(null);
+      googleRestoreAttemptedRef.current = false;
     }
   }, [room]);
 
@@ -584,6 +556,10 @@ function AuthenticatedApp({
     return true;
   }
 
+  async function confirmHostSession() {
+    return Boolean(room?.isHost) && await confirmAuthenticatedSession();
+  }
+
   function requestGoogleAuthorizationCode() {
     return new Promise<GoogleConnection | null>((resolve) => {
       if (!CLIENT_ID) {
@@ -611,7 +587,7 @@ function AuthenticatedApp({
           }
 
           try {
-            if (!await confirmAdminSession()) {
+            if (!await confirmHostSession()) {
               resolve(null);
               return;
             }
@@ -661,7 +637,7 @@ function AuthenticatedApp({
 
   async function restoreGoogleDriveConnection() {
     try {
-      if (!await confirmAdminSession()) {
+      if (!await confirmHostSession()) {
         return null;
       }
 
@@ -693,7 +669,7 @@ function AuthenticatedApp({
       return;
     }
 
-    if (!await confirmAdminSession()) {
+    if (!await confirmHostSession()) {
       return;
     }
 
@@ -703,7 +679,7 @@ function AuthenticatedApp({
     }
 
     if (room?.isHost && room.hasFile) {
-      const updated = await updateRoomDriveToken(connection);
+      const updated = await updateRoomDriveToken();
 
       if (!updated) {
         showToast("Could not restore Google Drive access.");
@@ -720,7 +696,7 @@ function AuthenticatedApp({
       return null;
     }
 
-    if (!await confirmAdminSession()) {
+    if (!await confirmHostSession()) {
       return null;
     }
 
@@ -738,7 +714,7 @@ function AuthenticatedApp({
     return restored.accessToken;
   }
 
-  async function updateRoomDriveToken(connection: GoogleConnection) {
+  async function updateRoomDriveToken() {
     const response = await authenticatedFetch(
       `${API_URL}/api/rooms/${roomId}/drive-token`,
       {
@@ -748,7 +724,6 @@ function AuthenticatedApp({
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          accessToken: connection.accessToken,
           clientId
         })
       }
@@ -776,7 +751,7 @@ function AuthenticatedApp({
       }
 
       if (room.hasFile) {
-        const updated = await updateRoomDriveToken(connection);
+        const updated = await updateRoomDriveToken();
         if (!updated || cancelled) {
           return;
         }
@@ -799,7 +774,7 @@ function AuthenticatedApp({
     name: string;
     accessToken: string;
   }) {
-    if (!await confirmAdminSession()) {
+    if (!await confirmHostSession()) {
       return;
     }
 
@@ -812,7 +787,6 @@ function AuthenticatedApp({
       body: JSON.stringify({
         fileId: file.id,
         fileName: file.name,
-        accessToken: file.accessToken,
         clientId
       })
     });
@@ -829,7 +803,7 @@ function AuthenticatedApp({
   }
 
   async function disconnectGoogleDrive() {
-    if (!await confirmAdminSession()) {
+    if (!await confirmHostSession()) {
       return;
     }
 
@@ -901,17 +875,17 @@ function AuthenticatedApp({
     setTheaterMode(false);
   }
 
-  async function leaveRoom() {
-    if (fullscreenCanHostOverlay) {
-      await document.exitFullscreen().catch(() => undefined);
-    }
-
+  function returnToHome(clearIdentity = false) {
     sessionStorage.removeItem(NAME_TAG_STORAGE_KEY);
-    resetClientIdentity();
+    if (clearIdentity) {
+      clearClientIdentity();
+    } else {
+      resetClientIdentity();
+    }
     window.history.replaceState({}, "", "/");
     setRoom(null);
     setRoomId("");
-    setJoinCode(role === "GUEST" ? allowedRoomId || "" : "");
+    setJoinCode("");
     setNameTag("");
     setJoinedNameTag("");
     setRoomName("");
@@ -921,6 +895,78 @@ function AuthenticatedApp({
     setChatUnreadCount(0);
     setSelfViewHidden(false);
     setToast("");
+  }
+
+  async function leaveRoom() {
+    if (fullscreenCanHostOverlay) {
+      await document.exitFullscreen().catch(() => undefined);
+    }
+
+    if (roomId && clientId) {
+      await authenticatedFetch(
+        `${API_URL}/api/rooms/${roomId}/leave?clientId=${encodeURIComponent(clientId)}`,
+        {
+          method: "POST",
+          credentials: "include"
+        }
+      ).catch(() => undefined);
+    }
+
+    returnToHome();
+  }
+
+  async function closeRoom() {
+    if (!room?.isHost || !window.confirm("Close this room for everyone?")) {
+      return;
+    }
+
+    const response = await authenticatedFetch(
+      `${API_URL}/api/rooms/${roomId}?clientId=${encodeURIComponent(clientId)}`,
+      {
+        method: "DELETE",
+        credentials: "include"
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status !== 401) {
+        const result = await response.json().catch(() => null);
+        alert(result?.error || "Could not close the room.");
+      }
+      return;
+    }
+
+    returnToHome(true);
+  }
+
+  async function transferRoomHost(participant: Participant) {
+    if (!room?.isHost || participant.clientId === clientId) {
+      return;
+    }
+
+    if (!window.confirm(`Make ${participant.nameTag} the room host?`)) {
+      return;
+    }
+
+    const response = await authenticatedFetch(
+      `${API_URL}/api/rooms/${roomId}/host`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          currentHostClientId: clientId,
+          targetClientId: participant.clientId
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      alert(result?.error || "Could not transfer the room host.");
+    }
   }
 
   async function toggleTheaterMode() {
@@ -982,8 +1028,6 @@ function AuthenticatedApp({
 
   const hasRoom = Boolean(roomId && room);
   const hasWatchLayout = Boolean(roomId && joinedNameTag && room);
-  const canCreateRoom = role === "ADMIN";
-
   return (
     <main
       ref={appShellRef}
@@ -1023,8 +1067,15 @@ function AuthenticatedApp({
               Leave Room
             </button>
           )}
+          {room?.isHost && (
+            <button className="headerCloseRoom" onClick={() => void closeRoom()}>
+              Close Room
+            </button>
+          )}
           <span className="userPill">{username}</span>
-          <button className="headerLogout" onClick={() => void logout()}>Logout</button>
+          {!roomId && (
+            <button className="headerLogout" onClick={() => void logout()}>Logout</button>
+          )}
         </div>
       </header>
 
@@ -1032,25 +1083,19 @@ function AuthenticatedApp({
         <section className="homePanel">
           <div className="homeIntro">
             <div className="eyebrow">Private watch rooms</div>
-            <h1>{canCreateRoom ? "Ready for movie night?" : "Join your watch party"}</h1>
-            <p>
-              {canCreateRoom
-                ? "Create a room or join an existing watch party."
-                : "Rejoin the private room from your invitation."}
-            </p>
+            <h1>Ready for movie night?</h1>
+            <p>Create a room or join an existing watch party.</p>
           </div>
 
           <div className="roomEntryCard">
-            {canCreateRoom && (
-              <input
-                value={roomName}
-                onChange={(event) => setRoomName(event.target.value)}
-                placeholder="Room name (optional)"
-                maxLength={48}
-                aria-label="Room name (optional)"
-                autoFocus
-              />
-            )}
+            <input
+              value={roomName}
+              onChange={(event) => setRoomName(event.target.value)}
+              placeholder="Room name (optional)"
+              maxLength={48}
+              aria-label="Room name (optional)"
+              autoFocus
+            />
 
             <input
               className="nameTagInput"
@@ -1059,20 +1104,15 @@ function AuthenticatedApp({
               placeholder="Your name tag (optional)"
               maxLength={32}
               aria-label="Your name tag (optional)"
-              autoFocus={!canCreateRoom}
             />
 
-            {canCreateRoom && (
-              <button className="primary" onClick={() => void createRoom()}>
-                Create Room
-              </button>
-            )}
+            <button className="primary" onClick={() => void createRoom()}>
+              Create Room
+            </button>
 
-            {canCreateRoom && (
-              <div className="homeActionDivider" aria-hidden="true">
-                <span>or join a room</span>
-              </div>
-            )}
+            <div className="homeActionDivider" aria-hidden="true">
+              <span>or join a room</span>
+            </div>
 
             <div className="join">
               <input
@@ -1086,7 +1126,6 @@ function AuthenticatedApp({
                 placeholder="Room code"
                 maxLength={6}
                 aria-label="Room code"
-                readOnly={role === "GUEST" && Boolean(allowedRoomId)}
               />
               <button onClick={() => void joinRoom()}>Join Room</button>
             </div>
@@ -1204,6 +1243,8 @@ function AuthenticatedApp({
                   onChatError={showToast}
                   onCopyRoom={() => void copyRoomCode()}
                   onCopyInvite={() => void copyInvite()}
+                  canTransferHost={room.isHost}
+                  onTransferHost={transferRoomHost}
                 />
               )}
             </section>

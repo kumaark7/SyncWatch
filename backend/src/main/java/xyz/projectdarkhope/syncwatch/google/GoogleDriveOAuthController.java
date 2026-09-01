@@ -1,9 +1,9 @@
 package xyz.projectdarkhope.syncwatch.google;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import xyz.projectdarkhope.syncwatch.auth.AuthService;
 
 import java.util.Map;
 
@@ -11,26 +11,35 @@ import java.util.Map;
 @RequestMapping("/api/google")
 public class GoogleDriveOAuthController {
     private final GoogleDriveOAuthService googleOAuth;
+    private final AuthService authService;
 
-    public GoogleDriveOAuthController(GoogleDriveOAuthService googleOAuth) {
+    public GoogleDriveOAuthController(
+            GoogleDriveOAuthService googleOAuth,
+            AuthService authService
+    ) {
         this.googleOAuth = googleOAuth;
+        this.authService = authService;
     }
 
     @PostMapping("/code")
     public ResponseEntity<?> exchangeCode(
             @RequestBody GoogleAuthorizationCodeRequest codeRequest,
             @RequestHeader(value = "X-Requested-With", required = false) String requestedWith,
-            HttpServletResponse response
+            HttpServletRequest request
     ) {
         if (!"XmlHttpRequest".equals(requestedWith)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization request"));
         }
+        String userId = currentUserId(request);
+        if (userId == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        }
         try {
             GoogleDriveOAuthService.Credentials credentials = googleOAuth.exchangeAuthorizationCode(
+                    userId,
                     codeRequest == null ? null : codeRequest.code(),
                     codeRequest == null ? null : codeRequest.redirectUri()
             );
-            googleOAuth.setConnectionCookie(response, credentials.refreshToken());
             return ResponseEntity.ok(new GoogleConnectionResponse(
                     true, credentials.accessToken(), credentials.expiresAt()
             ));
@@ -40,27 +49,32 @@ public class GoogleDriveOAuthController {
     }
 
     @GetMapping("/connection")
-    public GoogleConnectionResponse connection(
-            HttpServletRequest request,
-            HttpServletResponse response
-    ) {
+    public ResponseEntity<GoogleConnectionResponse> connection(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        if (userId == null) {
+            return ResponseEntity.status(401).body(GoogleConnectionResponse.disconnected());
+        }
         try {
-            GoogleDriveOAuthService.Credentials credentials = googleOAuth.refreshConnection(request);
-            googleOAuth.setConnectionCookie(response, credentials.refreshToken());
-            return new GoogleConnectionResponse(true, credentials.accessToken(), credentials.expiresAt());
+            GoogleDriveOAuthService.Credentials credentials = googleOAuth.refreshConnection(userId);
+            return ResponseEntity.ok(
+                    new GoogleConnectionResponse(true, credentials.accessToken(), credentials.expiresAt())
+            );
         } catch (GoogleOAuthException error) {
-            googleOAuth.clearConnectionCookie(response);
-            return GoogleConnectionResponse.disconnected();
+            return ResponseEntity.ok(GoogleConnectionResponse.disconnected());
         }
     }
 
     @DeleteMapping("/connection")
-    public ResponseEntity<Void> disconnect(
-            HttpServletRequest request,
-            HttpServletResponse response
-    ) {
-        googleOAuth.revoke(request);
-        googleOAuth.clearConnectionCookie(response);
+    public ResponseEntity<Void> disconnect(HttpServletRequest request) {
+        String userId = currentUserId(request);
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        googleOAuth.disconnect(userId);
         return ResponseEntity.noContent().build();
+    }
+
+    private String currentUserId(HttpServletRequest request) {
+        return authService.sessionUserId(request.getSession(false)).orElse(null);
     }
 }

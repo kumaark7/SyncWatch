@@ -2,12 +2,7 @@ package xyz.projectdarkhope.syncwatch.google;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 import xyz.projectdarkhope.syncwatch.room.Room;
 
@@ -25,42 +20,43 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class GoogleDriveOAuthService {
     public record Credentials(String accessToken, long expiresAt, String refreshToken) {}
 
-    private static final String CONNECTION_COOKIE = "syncwatch_google_drive";
     private static final URI TOKEN_ENDPOINT = URI.create("https://oauth2.googleapis.com/token");
     private static final URI REVOKE_ENDPOINT = URI.create("https://oauth2.googleapis.com/revoke");
     private static final long EXPIRY_SKEW_MILLIS = 60_000;
-    private static final Duration COOKIE_LIFETIME = Duration.ofDays(3650);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .build();
     private final ObjectMapper objectMapper;
+    private final GoogleDriveConnectionRepository connections;
+    private final ConcurrentHashMap<String, Object> refreshLocks = new ConcurrentHashMap<>();
     private final String clientId;
     private final String clientSecret;
     private final String frontendOrigin;
-    private final boolean secureCookie;
 
     public GoogleDriveOAuthService(
             ObjectMapper objectMapper,
+            GoogleDriveConnectionRepository connections,
             @Value("${syncwatch.google.client-id:}") String clientId,
             @Value("${syncwatch.google.client-secret:}") String clientSecret,
-            @Value("${syncwatch.frontend-origin:http://localhost:5173}") String frontendOrigin,
-            @Value("${server.servlet.session.cookie.secure:false}") boolean secureCookie
+            @Value("${syncwatch.frontend-origin:http://localhost:5173}") String frontendOrigin
     ) {
         this.objectMapper = objectMapper;
+        this.connections = connections;
         this.clientId = clientId.trim();
         this.clientSecret = clientSecret.trim();
         this.frontendOrigin = frontendOrigin.replaceAll("/+$", "");
-        this.secureCookie = secureCookie;
     }
 
-    public Credentials exchangeAuthorizationCode(String code, String redirectUri) {
+    public Credentials exchangeAuthorizationCode(String userId, String code, String redirectUri) {
+        requireUserId(userId);
         requireConfigured();
         if (code == null || code.isBlank()) {
             throw new GoogleOAuthException("Google authorization code is required");
@@ -82,73 +78,45 @@ public class GoogleDriveOAuthService {
                     "Google did not return persistent Drive access. Revoke SyncWatch in your Google Account permissions, then connect again."
             );
         }
-        return credentials(response, refreshToken);
+        Credentials credentials = credentials(response, refreshToken);
+        saveRefreshToken(userId, credentials.refreshToken());
+        return credentials;
     }
 
-    public Credentials refreshConnection(HttpServletRequest request) {
-        return refresh(readRefreshToken(request));
-    }
-
-    public String readRefreshToken(HttpServletRequest request) {
-        String encrypted = cookieValue(request);
-        if (encrypted == null) {
-            throw new GoogleOAuthException("Google Drive is not connected");
-        }
-        return decrypt(encrypted);
+    public Credentials refreshConnection(String userId) {
+        requireUserId(userId);
+        return refreshForUser(userId);
     }
 
     public String accessTokenFor(Room room) {
         synchronized (room) {
+            String ownerUserId = room.getDriveOwnerUserId();
+            requireUserId(ownerUserId);
+            storedRefreshToken(ownerUserId);
             if (room.getAccessToken() != null
                     && !room.getAccessToken().isBlank()
                     && room.getAccessTokenExpiresAt() > System.currentTimeMillis()) {
                 return room.getAccessToken();
             }
-            String refreshToken = room.getDriveRefreshToken();
-            if (refreshToken == null || refreshToken.isBlank()) {
-                throw new GoogleOAuthException("Google Drive authorization expired");
-            }
-            Credentials refreshed = refresh(refreshToken);
+            Credentials refreshed = refreshForUser(ownerUserId);
             room.setDriveCredentials(
+                    ownerUserId,
                     refreshed.accessToken(),
-                    refreshed.expiresAt(),
-                    refreshed.refreshToken()
+                    refreshed.expiresAt()
             );
             return refreshed.accessToken();
         }
     }
 
-    public void setConnectionCookie(HttpServletResponse response, String refreshToken) {
-        ResponseCookie cookie = ResponseCookie.from(CONNECTION_COOKIE, encrypt(refreshToken))
-                .httpOnly(true)
-                .secure(secureCookie)
-                .sameSite("Lax")
-                .path("/")
-                .maxAge(COOKIE_LIFETIME)
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-    }
-
-    public void clearConnectionCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie.from(CONNECTION_COOKIE, "")
-                .httpOnly(true)
-                .secure(secureCookie)
-                .sameSite("Lax")
-                .path("/")
-                .maxAge(Duration.ZERO)
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-    }
-
-    public void revoke(HttpServletRequest request) {
-        String refreshToken;
-        try {
-            refreshToken = readRefreshToken(request);
-        } catch (GoogleOAuthException ignored) {
+    public void disconnect(String userId) {
+        requireUserId(userId);
+        String encryptedRefreshToken = connections.findEncryptedRefreshToken(userId).orElse(null);
+        if (encryptedRefreshToken == null) {
             return;
         }
 
         try {
+            String refreshToken = decrypt(encryptedRefreshToken);
             HttpRequest revokeRequest = HttpRequest.newBuilder(REVOKE_ENDPOINT)
                     .timeout(Duration.ofSeconds(20))
                     .header("Content-Type", "application/x-www-form-urlencoded")
@@ -159,7 +127,27 @@ public class GoogleDriveOAuthService {
             Thread.currentThread().interrupt();
         } catch (Exception ignored) {
             // Always remove the local connection, even when Google is temporarily unavailable.
+        } finally {
+            connections.delete(userId);
         }
+    }
+
+    private Credentials refreshForUser(String userId) {
+        synchronized (refreshLocks.computeIfAbsent(userId, ignored -> new Object())) {
+            Credentials refreshed = refresh(storedRefreshToken(userId));
+            saveRefreshToken(userId, refreshed.refreshToken());
+            return refreshed;
+        }
+    }
+
+    private String storedRefreshToken(String userId) {
+        return connections.findEncryptedRefreshToken(userId)
+                .map(this::decrypt)
+                .orElseThrow(() -> new GoogleOAuthException("Google Drive is not connected"));
+    }
+
+    private void saveRefreshToken(String userId, String refreshToken) {
+        connections.save(userId, encrypt(refreshToken));
     }
 
     private Credentials refresh(String refreshToken) {
@@ -212,16 +200,6 @@ public class GoogleDriveOAuthService {
         return new Credentials(accessToken, expiresAt, refreshToken);
     }
 
-    private String cookieValue(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) return null;
-        return Arrays.stream(cookies)
-                .filter(cookie -> CONNECTION_COOKIE.equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .findFirst()
-                .orElse(null);
-    }
-
     private String encrypt(String value) {
         try {
             byte[] iv = new byte[12];
@@ -241,7 +219,7 @@ public class GoogleDriveOAuthService {
     private String decrypt(String value) {
         try {
             byte[] payload = Base64.getUrlDecoder().decode(value);
-            if (payload.length <= 28) throw new IllegalArgumentException("Invalid encrypted cookie");
+            if (payload.length <= 28) throw new IllegalArgumentException("Invalid encrypted connection");
             byte[] iv = Arrays.copyOfRange(payload, 0, 12);
             byte[] encrypted = Arrays.copyOfRange(payload, 12, payload.length);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
@@ -261,6 +239,12 @@ public class GoogleDriveOAuthService {
     private void requireConfigured() {
         if (clientId.isBlank() || clientSecret.isBlank()) {
             throw new GoogleOAuthException("Google Drive server authorization is not configured");
+        }
+    }
+
+    private void requireUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
+            throw new GoogleOAuthException("Authenticated SyncWatch user is required");
         }
     }
 
