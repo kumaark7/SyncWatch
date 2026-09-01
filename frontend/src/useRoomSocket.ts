@@ -79,7 +79,14 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     setClientId(nextClientId);
   }, [sessionClientId]);
 
+  const clearClientIdentity = useCallback(() => {
+    sessionStorage.removeItem(ROOM_CLIENT_ID_STORAGE_KEY);
+    clientIdRef.current = "";
+    setClientId("");
+  }, []);
+
   useEffect(() => {
+    setLastEvent(null);
     setChatMessages([]);
     setLastChatMessage(null);
   }, [roomId]);
@@ -239,6 +246,7 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     clientId,
     ensureClientIdentity,
     resetClientIdentity,
+    clearClientIdentity,
     chatMessages,
     lastChatMessage,
     sendChatMessage,

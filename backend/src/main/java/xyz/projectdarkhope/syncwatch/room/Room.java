@@ -1,8 +1,8 @@
 package xyz.projectdarkhope.syncwatch.room;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,14 +20,15 @@ public class Room {
     private volatile String fileName;
     private volatile String accessToken;
     private volatile long accessTokenExpiresAt;
-    private volatile String driveRefreshToken;
+    private volatile String driveOwnerUserId;
     private volatile String hostClientId;
     private volatile boolean playing;
     private volatile double currentTime;
     private volatile long updatedAt;
     private volatile long seekVersion;
-    private final Map<String, String> participantNames = new HashMap<>();
-    private final Map<String, Set<String>> sessionsByClientId = new HashMap<>();
+    private final Map<String, String> participantNames = new LinkedHashMap<>();
+    private final Map<String, String> participantUserIds = new LinkedHashMap<>();
+    private final Map<String, Set<String>> sessionsByClientId = new LinkedHashMap<>();
 
     public Room(String id, String name) {
         this.id = id;
@@ -43,7 +44,7 @@ public class Room {
     public void setFileName(String v) { fileName = v; }
     public String getAccessToken() { return accessToken; }
     public long getAccessTokenExpiresAt() { return accessTokenExpiresAt; }
-    public String getDriveRefreshToken() { return driveRefreshToken; }
+    public String getDriveOwnerUserId() { return driveOwnerUserId; }
     public String getHostClientId() { return hostClientId; }
     public boolean isPlaying() { return playing; }
     public long getSeekVersion() { return seekVersion; }
@@ -53,13 +54,45 @@ public class Room {
         return clientId != null && !clientId.isBlank() && clientId.equals(hostClientId);
     }
 
-    public synchronized boolean claimHost(String clientId) {
-        if (clientId == null || clientId.isBlank()) return false;
+    public synchronized boolean claimHost(String clientId, String userId) {
+        if (clientId == null || clientId.isBlank() || userId == null || userId.isBlank()) {
+            return false;
+        }
+        String existingOwner = participantUserIds.get(clientId);
+        if (existingOwner != null && !existingOwner.equals(userId)) {
+            return false;
+        }
+        participantUserIds.put(clientId, userId);
         if (!hasHost()) {
             hostClientId = clientId;
             return true;
         }
         return hostClientId.equals(clientId);
+    }
+
+    public synchronized String promoteOldestParticipantIfNeeded() {
+        if (hostClientId != null && participantNames.containsKey(hostClientId)) {
+            return hostClientId;
+        }
+
+        hostClientId = participantNames.keySet().stream().findFirst().orElse(null);
+        return hostClientId;
+    }
+
+    public synchronized boolean transferHost(String currentHostClientId, String targetClientId) {
+        if (!isHost(currentHostClientId)
+                || targetClientId == null
+                || targetClientId.isBlank()
+                || !participantNames.containsKey(targetClientId)) {
+            return false;
+        }
+
+        hostClientId = targetClientId;
+        return true;
+    }
+
+    public synchronized boolean hasParticipants() {
+        return !participantNames.isEmpty();
     }
 
     public synchronized void resetPlayback() {
@@ -73,18 +106,18 @@ public class Room {
         fileName = null;
         accessToken = null;
         accessTokenExpiresAt = 0;
-        driveRefreshToken = null;
+        driveOwnerUserId = null;
         resetPlayback();
     }
 
     public synchronized void setDriveCredentials(
+            String ownerUserId,
             String accessToken,
-            long accessTokenExpiresAt,
-            String refreshToken
+            long accessTokenExpiresAt
     ) {
+        this.driveOwnerUserId = ownerUserId;
         this.accessToken = accessToken;
         this.accessTokenExpiresAt = accessTokenExpiresAt;
-        this.driveRefreshToken = refreshToken;
     }
 
     public synchronized void updatePlayback(double time, boolean playing) {
@@ -105,16 +138,24 @@ public class Room {
 
     public synchronized ParticipantRegistration registerParticipant(
             String clientId,
+            String userId,
             String nameTag,
             String sessionId
     ) {
         if (clientId == null || clientId.isBlank()
+                || userId == null || userId.isBlank()
                 || nameTag == null || nameTag.isBlank()
                 || sessionId == null || sessionId.isBlank()) {
             return new ParticipantRegistration(false, false, null);
         }
 
+        String existingOwner = participantUserIds.get(clientId);
+        if (existingOwner != null && !existingOwner.equals(userId)) {
+            return new ParticipantRegistration(false, false, null);
+        }
+
         boolean alreadyPresent = participantNames.containsKey(clientId);
+        participantUserIds.put(clientId, userId);
         participantNames.put(clientId, nameTag.trim());
         boolean sessionAdded = sessionsByClientId
                 .computeIfAbsent(clientId, ignored -> new HashSet<>())
@@ -140,6 +181,7 @@ public class Room {
                 String nameTag = participantNames.get(clientId);
                 sessionsByClientId.remove(entry.getKey());
                 participantNames.remove(entry.getKey());
+                participantUserIds.remove(entry.getKey());
                 if (nameTag != null) {
                     departures.add(new RoomParticipant(clientId, nameTag, isHost(clientId)));
                 }
@@ -149,8 +191,34 @@ public class Room {
         return departures;
     }
 
+    public synchronized RoomParticipant removeParticipant(String clientId) {
+        if (clientId == null || clientId.isBlank()) {
+            return null;
+        }
+
+        String nameTag = participantNames.remove(clientId);
+        participantUserIds.remove(clientId);
+        sessionsByClientId.remove(clientId);
+        if (nameTag == null) {
+            return null;
+        }
+
+        return new RoomParticipant(clientId, nameTag, isHost(clientId));
+    }
+
     public synchronized boolean hasParticipant(String clientId) {
         return clientId != null && participantNames.containsKey(clientId);
+    }
+
+    public synchronized boolean isParticipantOwnedBy(String clientId, String userId) {
+        return clientId != null
+                && userId != null
+                && participantNames.containsKey(clientId)
+                && userId.equals(participantUserIds.get(clientId));
+    }
+
+    public synchronized boolean isHostOwnedBy(String clientId, String userId) {
+        return isHost(clientId) && isParticipantOwnedBy(clientId, userId);
     }
 
     public synchronized String getParticipantName(String clientId) {

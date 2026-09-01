@@ -6,12 +6,12 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import xyz.projectdarkhope.syncwatch.auth.AuthService;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
-import xyz.projectdarkhope.syncwatch.auth.AuthService;
 
 import java.util.Map;
 
@@ -40,7 +40,8 @@ public class SyncController {
             @DestinationVariable String roomId,
             SyncMessage message,
             @Header(SimpMessageHeaderAccessor.SESSION_ID_HEADER) String sessionId,
-            @Header(name = "simpSessionAttributes", required = false) Map<String, Object> sessionAttributes
+            @Header(name = "simpSessionAttributes", required = false)
+            Map<String, Object> sessionAttributes
     ) {
         Room room = rooms.find(roomId).orElse(null);
 
@@ -56,25 +57,20 @@ public class SyncController {
 
         String effectiveClientId = message.clientId();
         String participantName = message.nameTag();
-        if (sessionAttributes != null
-                && AuthService.ROLE_GUEST.equals(sessionAttributes.get(AuthService.SESSION_ROLE))) {
-            Object allowedRoom = sessionAttributes.get(AuthService.SESSION_GUEST_ROOM);
-            Object guestName = sessionAttributes.get(AuthService.SESSION_DISPLAY_NAME);
-            Object guestClientId = sessionAttributes.get(AuthService.SESSION_CLIENT_ID);
-            if (!(allowedRoom instanceof String allowed)
-                    || !room.getId().equalsIgnoreCase(allowed)
-                    || !(guestName instanceof String)
-                    || !(guestClientId instanceof String)) {
-                return;
-            }
-            participantName = (String) guestName;
-            effectiveClientId = (String) guestClientId;
+        String userId = sessionAttributes == null
+                ? null
+                : sessionAttributes.get(AuthService.SESSION_USER_ID) instanceof String value
+                        ? value
+                        : null;
+        if (userId == null || userId.isBlank()) {
+            return;
         }
 
         if ("JOIN".equals(type)) {
             Room.ParticipantRegistration registration = presence.registerParticipant(
                     room,
                     effectiveClientId,
+                    userId,
                     participantName,
                     sessionId
             );
@@ -111,6 +107,10 @@ public class SyncController {
         }
 
         if (effectiveClientId == null || effectiveClientId.isBlank()) {
+            return;
+        }
+
+        if (!room.isParticipantOwnedBy(effectiveClientId, userId)) {
             return;
         }
 

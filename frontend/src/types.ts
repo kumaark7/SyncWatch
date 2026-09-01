@@ -18,7 +18,8 @@ export type SyncEvent = {
     | "SEEK"
     | "FILE_SELECTED"
     | "FILE_CLEARED"
-    | "PARTICIPANTS";
+    | "PARTICIPANTS"
+    | "ROOM_CLOSED";
   time: number;
   playing: boolean;
   fileName?: string | null;

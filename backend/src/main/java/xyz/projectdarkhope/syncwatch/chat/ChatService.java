@@ -135,6 +135,14 @@ public class ChatService {
         }
     }
 
+    public void removeRoom(String roomId) {
+        if (roomId == null) {
+            return;
+        }
+        historyByRoom.remove(roomId);
+        callParticipantsByRoom.remove(roomId);
+    }
+
     private String normalizeText(String rawText) {
         if (rawText == null) {
             return null;

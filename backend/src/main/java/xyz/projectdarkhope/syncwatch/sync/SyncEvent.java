@@ -85,4 +85,18 @@ public record SyncEvent(
                 room.getParticipants()
         );
     }
+
+    public static SyncEvent roomClosed(Room room, String senderClientId) {
+        return new SyncEvent(
+                "ROOM_CLOSED",
+                room.getCurrentTime(),
+                false,
+                room.getFileName(),
+                System.currentTimeMillis(),
+                senderClientId,
+                room.getHostClientId(),
+                room.getSeekVersion(),
+                null
+        );
+    }
 }

@@ -1,11 +1,22 @@
+import { Crown } from "lucide-react";
+import { useState } from "react";
 import type { Participant } from "../types";
 
 type Props = {
   participants: Participant[];
   clientId: string;
+  canTransferHost: boolean;
+  onTransferHost: (participant: Participant) => Promise<void>;
 };
 
-export default function ParticipantsPanel({ participants, clientId }: Props) {
+export default function ParticipantsPanel({
+  participants,
+  clientId,
+  canTransferHost,
+  onTransferHost
+}: Props) {
+  const [transferringClientId, setTransferringClientId] = useState<string | null>(null);
+
   return (
     <ul className="participantList">
       {participants.map((participant) => {
@@ -24,6 +35,26 @@ export default function ParticipantsPanel({ participants, clientId }: Props) {
                 {isYou ? " · You" : ""}
               </span>
             </span>
+            {canTransferHost && !isYou && (
+              <button
+                type="button"
+                className="participantHostTransfer"
+                disabled={transferringClientId !== null}
+                aria-label={`Make ${participant.nameTag} the room host`}
+                title={`Make ${participant.nameTag} Host`}
+                onClick={async () => {
+                  setTransferringClientId(participant.clientId);
+                  try {
+                    await onTransferHost(participant);
+                  } finally {
+                    setTransferringClientId(null);
+                  }
+                }}
+              >
+                <Crown size={16} strokeWidth={2.2} aria-hidden="true" />
+                <span>{transferringClientId === participant.clientId ? "Transferring" : "Make Host"}</span>
+              </button>
+            )}
           </li>
         );
       })}

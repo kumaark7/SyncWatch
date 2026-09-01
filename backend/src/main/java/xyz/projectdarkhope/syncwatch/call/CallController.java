@@ -69,23 +69,9 @@ public class CallController {
             return null;
         }
 
-        if (authService.isAdmin(session)) {
-            return room.isHost(requestedClientId) && room.hasParticipant(requestedClientId)
-                    ? requestedClientId
-                    : null;
-        }
-
-        if (!authService.isGuestAllowedInRoom(session, room.getId())) {
-            return null;
-        }
-
-        Object sessionClientId = session.getAttribute(AuthService.SESSION_CLIENT_ID);
-        if (!(sessionClientId instanceof String clientId)
-                || !clientId.equals(requestedClientId)
-                || !room.hasParticipant(clientId)) {
-            return null;
-        }
-
-        return clientId;
+        return authService.sessionUserId(session)
+                .filter(userId -> room.isParticipantOwnedBy(requestedClientId, userId))
+                .map(ignored -> requestedClientId)
+                .orElse(null);
     }
 }

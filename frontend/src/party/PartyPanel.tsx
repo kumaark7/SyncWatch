@@ -23,6 +23,8 @@ type Props = {
   onChatError?: (message: string) => void;
   onCopyRoom: () => void;
   onCopyInvite: () => void;
+  canTransferHost: boolean;
+  onTransferHost: (participant: Participant) => Promise<void>;
 };
 
 export default function PartyPanel(props: Props) {
@@ -70,7 +72,12 @@ export default function PartyPanel(props: Props) {
       >
         {props.activeTab === "people" ? (
           <div className="peoplePanel">
-            <ParticipantsPanel participants={props.participants} clientId={props.clientId} />
+            <ParticipantsPanel
+              participants={props.participants}
+              clientId={props.clientId}
+              canTransferHost={props.canTransferHost}
+              onTransferHost={props.onTransferHost}
+            />
             <RoomCard
               roomId={props.roomId}
               onCopyRoom={props.onCopyRoom}

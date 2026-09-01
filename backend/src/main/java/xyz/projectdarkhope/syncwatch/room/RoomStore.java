@@ -24,6 +24,11 @@ public class RoomStore {
 
     public Collection<Room> all(){return rooms.values();}
 
+    public boolean remove(String id, Room room) {
+        if (id == null || room == null) return false;
+        return rooms.remove(id.trim().toUpperCase(), room);
+    }
+
     private String newId(){
         StringBuilder s=new StringBuilder();
         for(int i=0;i<6;i++)s.append(CHARS.charAt(random.nextInt(CHARS.length())));

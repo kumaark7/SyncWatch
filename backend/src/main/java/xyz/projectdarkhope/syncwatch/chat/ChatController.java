@@ -1,5 +1,6 @@
 package xyz.projectdarkhope.syncwatch.chat;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.Header;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
+import xyz.projectdarkhope.syncwatch.auth.AuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
 
@@ -23,11 +25,18 @@ public class ChatController {
     private final RoomStore rooms;
     private final ChatService chatService;
     private final SimpMessagingTemplate messaging;
+    private final AuthService authService;
 
-    public ChatController(RoomStore rooms, ChatService chatService, SimpMessagingTemplate messaging) {
+    public ChatController(
+            RoomStore rooms,
+            ChatService chatService,
+            SimpMessagingTemplate messaging,
+            AuthService authService
+    ) {
         this.rooms = rooms;
         this.chatService = chatService;
         this.messaging = messaging;
+        this.authService = authService;
     }
 
     @MessageMapping("/rooms/{roomId}/chat")
@@ -120,10 +129,15 @@ public class ChatController {
     @ResponseBody
     public ResponseEntity<?> history(
             @PathVariable String roomId,
-            @RequestParam String clientId
+            @RequestParam String clientId,
+            HttpServletRequest request
     ) {
+        String userId = authService.sessionUserId(request.getSession(false)).orElse(null);
+        if (userId == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        }
         return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
-            if (clientId == null || clientId.isBlank() || !room.hasParticipant(clientId)) {
+            if (!room.isParticipantOwnedBy(clientId, userId)) {
                 return ResponseEntity.status(403).body(Map.of("error", "Join the room before reading chat"));
             }
 
