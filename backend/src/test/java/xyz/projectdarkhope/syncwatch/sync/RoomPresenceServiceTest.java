@@ -264,6 +264,13 @@ class RoomPresenceServiceTest {
 
     @Test
     void reconnectCannotTakeOverAnotherUsersStableClientId() {
+        presence = new RoomPresenceService(
+        rooms,
+        messaging,
+        chatService,
+        scheduler,
+        Duration.ofSeconds(2)
+        );
         Room room = rooms.create("Test room");
         claimHost(room, "stable-client");
         register(room, "stable-client", "Owner", "old-session");
