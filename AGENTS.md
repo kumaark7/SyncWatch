@@ -20,7 +20,7 @@ These instructions apply to all Codex work in this repository.
 
 For every task involving frontend layout, visual styling, components, responsive behavior, interaction design, accessibility, or UI/UX:
 
-**Read `docs/UI_UX_STANDARD.md` before editing the interface.**
+**Read `UI_UX_STANDARD.md` before editing the interface.**
 
 Treat that file as the project's UI/UX implementation standard.
 

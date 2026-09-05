@@ -1,9 +1,12 @@
 {
   "name": "watch-party-mvp",
+  "version": "0.8.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
-    "install:all": "npm --prefix server install && npm --prefix client install"
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && mvn spring-boot:run",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm --prefix frontend ci && mvn -f backend/pom.xml dependency:resolve"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"

@@ -1,561 +1,131 @@
 # SyncWatch Project Context
 
-## Project
+Current architecture for v0.8.0 release preparation. Maven, npm, and the health endpoint report 0.8.0; Maven packaging produces syncwatch-0.8.0.jar. This document does not pin a development branch or claim a release is deployed. Read AGENTS.md before changes; the UI standard lives at root UI_UX_STANDARD.md.
 
-**Name:** SyncWatch  
-**Current development branch:** `v0.3-sync`  
-**Repository:** `https://github.com/kumaark7/SyncWatch`
+## Structure
 
-SyncWatch is a lightweight personal watch-party application for playing Google Drive videos in sync across multiple browsers while preserving original video/audio quality.
+- frontend/: React + TypeScript + Vite, native HTML video, STOMP.js.
+- frontend/src/App.tsx: auth/Home/Room coordination, Drive selection and room events.
+- frontend/src/VideoPlayer.tsx: synchronized movie controls and media handling.
+- frontend/src/party/: People, chat, and LiveKit UI.
+- frontend/src/gesture/: optional local MediaPipe gesture recognition.
+- backend/: Java 21, Spring Boot 4.1.0, Maven, Spring JDBC, REST and WebSocket/STOMP.
+- backend/src/main/resources/schema.sql: persistent account, Drive, and Remember Me tables.
 
-## Core Goals
+Root package scripts target backend/ and frontend/. There is no Node server/client backend pair.
 
-- Keep the app lightweight and simple.
-- Preserve original video/audio quality.
-- No transcoding.
-- No re-encoding.
-- No FFmpeg in the current architecture.
-- Personal-use focused.
-- Avoid unnecessary accounts, database, chat, profiles, admin panels, or heavy infrastructure unless explicitly added later.
+## Persistent and Temporary State
 
-## Current Stack
+File-backed H2 stores unique username/email accounts, stable user IDs, BCrypt password hashes (cost 12), encrypted registered-user Drive refresh tokens, and SHA-256 Remember Me token hashes. The default JDBC path ./syncwatch-users is relative to Java's working directory. Production should use an explicit stable path.
 
-### Frontend
-- React
-- TypeScript
-- Vite
-- Native HTML5 `<video>`
-- `@stomp/stompjs`
+RoomStore, Room playback state, presence, and ChatService history are in memory. Spring restart loses rooms/chat and ordinary servlet sessions. Persistent login can restore an account session but cannot restore a lost room.
 
-### Backend
-- Java
-- Spring Boot
-- Spring Web
-- Spring WebSocket/STOMP
+## Authentication and Participant Identity
 
-### Video Source
-- Google Drive
+AuthController supports public Sign Up and Sign In by username/email plus password, establishing HttpSession with stable userId. AuthSessionResponse returns safe identity fields.
 
-### State
-- In-memory room storage
-- No persistent database
+Servlet inactivity timeout remains 30 minutes. App revalidates approximately every five minutes and on focus/visibility restoration, plus before Picker/file operations. AuthProvider handles protected fetch 401s without replaying mutations.
 
-## Current Architecture
+RememberMeService issues 32-byte random tokens, hashes them for H2 storage, expires them after 30 days, and rotates them on successful restoration. Cookies use HttpOnly, SameSite=Lax, and Secure when SYNCWATCH_COOKIE_SECURE=true. Local HTTP defaults to false. Logout invalidates the session and revokes the current remembered token.
 
-```text
-                 SyncWatch
+Invite links use /?room=ROOM_ID. GuestAuthController establishes a room-scoped session with server-generated guest ID and client ID after name entry. Anonymous guests have no account or persistent Remember Me token.
 
-       React + TypeScript + Vite
-        ┌─────────────────────┐
-        │ Google Picker       │
-        │ HTML5 Video         │
-        │ STOMP WebSocket     │
-        │ Room UI             │
-        └─────────┬───────────┘
-                  │
-           REST + WebSocket
-                  │
-        ┌─────────▼───────────┐
-        │   Spring Boot       │
-        │                     │
-        │ RoomController      │
-        │ RoomStore           │
-        │ StreamController    │
-        │ WebSocketConfig     │
-        │ SyncController      │
-        │ SyncScheduler       │
-        └─────────┬───────────┘
-                  │
-                  ▼
-             Google Drive
+Stable browser client identity and room name tags use sessionStorage to support refresh. They are not authorization proofs. Participant ownership is bound to a server-session user/guest ID, and incoming actions are checked against it.
+
+AuthFilter protects API/WebSocket access with public auth routes and a narrow guest allowlist. WebSocketAuthInterceptor checks handshake identity and restricts guest destinations to the invited room. HTTP/STOMP origins are explicitly configured.
+
+Room actions verify participant/Host ownership; CallController issues LiveKit tokens only for the caller's own participant. Request client IDs, names, and URL shape cannot establish Host rights.
+
+Current limitation: anonymous guest sessions cannot access the manual Host-transfer or Close Room endpoints through AuthFilter, even after promotion. Do not claim universal availability of those actions to guest Hosts without a separate implementation change.
+
+## Room Lifecycle
+
+Registered Sign In/Sign Up leads to Home, then Create/Join. Creation establishes Host; selecting a Drive file does not assign Host.
+
+Manual Make Host changes authoritative ownership and broadcasts participant/Host state with a chat notice. On deliberate Host departure, the oldest remaining participant is promoted deterministically. A returning former Host does not automatically regain the role.
+
+RoomPresenceService applies a five-second reconnect grace. Replacement STOMP sessions using the same stable identity cancel pending departure, avoiding false leave/join and premature promotion. Real disconnect completes after grace. Explicit Leave acts immediately. Empty rooms are removed.
+
+Close Room explicitly terminates and broadcasts closure without Host transfer. Frontend cleanup clears room-specific identity/state and returns participants to Home. Leave also returns Home; registered auth and persistent Drive authorization are retained. Logout is on Home.
+
+## Playback
+
+Media: Google Drive original bytes -> StreamController HTTP Range proxy -> native browser video.
+
+Control: player/shortcut/gesture -> existing STOMP action -> SyncController authoritative Room -> broadcast -> clients.
+
+Keep seek ordering, remote-event suppression, server-time compensation, play/pause preservation on seek, drift/rate correction, buffering, and autoplay handling intact. SyncScheduler sends state every five seconds for playing rooms with a file. Join/subscription restores room state.
+
+WebSocketConfig provides a scheduler and 10-second broker heartbeats. STOMP.js uses 10-second heartbeats and reconnectDelay 2000. WebSocket traffic is separate from HTTP auth keepalive.
+
+## Drive Ownership and Streaming
+
+GoogleDriveOAuthService uses popup authorization-code exchange with drive.file scope. Short-lived Picker tokens stay in browser memory; refresh tokens remain backend-only.
+
+Registered refresh tokens are AES-GCM encrypted in H2 by userId. The key derives from GOOGLE_CLIENT_SECRET; rotating that secret affects stored-token decryption. Connections survive logout/login and role changes without cross-user inheritance.
+
+Promoted guest Hosts can authorize their own Drive using an encrypted backend memory map keyed by guest ID. Departure/room cleanup or explicit Disconnect removes temporary credentials. They never enter the persistent account connection table.
+
+GoogleDriveOAuthController resolves the current registered user, or verifies that a guest owns the current Host participant. Code exchange validates X-Requested-With and OAuth redirect origin. Disconnect affects only the caller's authorization.
+
+Room caches the selected file's credential owner, access token, and expiresAt. Host transfer does not transfer authorization or rewrite the file owner. A new Host may connect their own Drive while the selected movie continues with its original owner's credentials.
+
+accessTokenFor(room) checks expiry for each stream request and refreshes through the credential owner when needed; refresh work is synchronized. StreamController preserves Range, successful upstream status, Content-Range and other content headers. No transcoding, FFmpeg, HLS/DASH conversion, or movie-quality adjustment is present.
+
+Known boundary: upstream non-2xx responses are propagated. Forced refresh and retry of the same Range request after upstream 401 is not implemented.
+
+## Chat and Calls
+
+ChatService stores room history in memory and broadcasts participant/call/Host-change notices. Party UI contains People, Chat, and Call.
+
+CallProvider creates one LiveKit Room with adaptiveStream:true and dynacast:true. LiveKit carries WebRTC media independently of movie streaming. Controls include devices, mic/camera, speaker mute, connection indicators, floating/minimized layout, audio processing, and requested camera quality.
+
+Adaptive Stream controls received call quality. Manual camera presets request local capture quality. Neither changes Drive movie bytes. PushToTalkProvider uses hold T, ignores typing, and respects manual OFF. Optional gesture recognition reuses the local camera and runs locally.
+
+## Screen Sharing
+
+ScreenShareController reserves one participant per application room with ownership checks. The Host can block anonymous guest shares; registered users and the Host remain eligible. RoomResponse/SyncEvent include sharer identity and guest-permission state.
+
+CallProvider uses the existing LiveKit participant's setScreenShareEnabled with browser-supported audio. After capture starts, VideoPlayer.pausePlayback sends the existing synchronized PAUSE action. ScreenShareStage overlays the exact main-player area and labels the sharer. Stop restores the movie without sending PLAY.
+
+Local track termination, call leave/disconnect, provider cleanup, and room departure release sharing state. The native browser picker determines tab/window/screen selection. System audio and capture support vary by browser/platform.
+
+Security boundary: LiveKit tokens permit screen sources. The reservation and guest block are enforced by application endpoints and stock-client subscription/rendering. They are not LiveKit server-side publish-permission revocation against a modified client.
+
+## Keyboard Shortcuts
+
+RoomKeyboardShortcuts and PushToTalkProvider are the source of truth. Ignore editable targets and Ctrl/Alt/Meta modifiers; reuse existing actions.
+
+| Key | Action |
+| --- | --- |
+| Space / P | synchronized Play/Pause |
+| Left / Right | synchronized seek -10/+10 seconds |
+| Up / Down | local volume +5%/-5% |
+| M / V | microphone / camera |
+| C | Chat |
+| Hold T | Push-to-Talk when enabled |
+| F | fullscreen |
+| ? | help |
+
+## Validation
+
+From repository root:
+
+```sh
+mvn -f backend/pom.xml test
+corepack npm --prefix frontend run build
+git diff --check
 ```
 
-## Media Flow
+Build runs TypeScript and Vite. No separate frontend lint/test script exists. Backend tests cover authentication, Remember Me, guest isolation, ownership, lifecycle, reconnect presence, Drive ownership, and screen-share control.
 
-```text
-Google Drive original video
-        ↓
-Spring Boot range proxy
-        ↓
-Browser <video>
-```
+Manual verification should cover account switching, guest invites, refresh, Host transfer, Leave/Close, late joining, long-session seeking, reconnect grace, two-person calls, screen sharing/audio, browser Stop sharing, and mobile/fullscreen. Passing unit tests does not establish successful browser OAuth or native media capture.
 
-Important:
+## Remaining Release Housekeeping
 
-- Spring does not transcode.
-- Spring does not re-encode.
-- Spring proxies the original Drive bytes.
-- HTTP Range requests are forwarded so seeking works.
-- Each participant streams independently through Spring.
+- The private root tooling package retains its existing name, watch-party-mvp; its version is 0.8.0.
+- ISSUES_FACED_AND_FIXES.txt is historical troubleshooting, not the current architecture contract.
+- Deployment/Nginx/systemd configuration is not tracked.
+- Bundle-size warnings and browser runtime verification remain separate work. No optimization or behavior change is implied here.
 
-## Control Flow
-
-```text
-Browser action
-   ↓
-STOMP/WebSocket
-   ↓
-Spring authoritative room state
-   ↓
-Broadcast event
-   ↓
-All room browsers
-```
-
-Control messages are tiny and independent from video data.
-
-## Version History
-
-### v0.1
-- Google Drive playback MVP
-- Google Picker
-- Room creation/join
-- Original Drive playback
-
-### v0.2
-- Migrated backend to Java + Spring Boot
-- Kept React/Vite frontend
-- Added Spring-based streaming proxy
-- HTTP Range support
-- No real-time sync yet
-
-### v0.3
-Current development version.
-
-Goal:
-- Make SyncWatch a genuinely usable personal watch-party app.
-
-## Current v0.3 Features
-
-- Create room
-- Join room
-- Shareable room URL
-- Google Drive Picker
-- Google Drive video streaming through Spring Boot
-- HTTP Range seeking
-- WebSocket/STOMP connection
-- Play synchronization
-- Pause synchronization
-- Seek synchronization
-- Join-in-progress
-- Periodic room-state synchronization
-- Drift correction
-- Automatic WebSocket reconnect
-- Autoplay-blocked overlay
-- Seek/sync visual overlays
-- Real buffering overlay
-- Copy invite toast
-- Host/guest role support
-- Per-browser temporary client ID
-- Drive file change broadcast
-
-## Host / Guest Model
-
-Current intended behavior:
-
-```text
-Create room
-   ↓
-Normal room page
-   ↓
-Browser chooses Google Drive file
-   ↓
-That browser becomes HOST
-   ↓
-Copy invite
-   ↓
-/room/ABC123?guest=1
-   ↓
-Guest joins
-```
-
-Rules:
-
-- The first browser that successfully chooses a Google Drive file becomes host.
-- Host identity is temporary and exists only in room memory.
-- No login/session persistence is required.
-- Guest invite URL uses `?guest=1`.
-- Guest should not see the Google Drive picker after host assignment.
-- Only host should be allowed to change the Drive file.
-- A guest attempting to replace the Drive file should receive HTTP 403.
-- Host/guest role is based on server-recognized client identity, not only the URL.
-
-## Client Identity
-
-Each browser gets a temporary `clientId`.
-
-Used for:
-- Knowing who sent PLAY/PAUSE/SEEK.
-- Distinguishing own echoed event from remote event.
-- Determining host identity.
-- Correct sync overlay labels.
-
-Expected event concept:
-
-```json
-{
-  "type": "SEEK",
-  "time": 42.5,
-  "playing": true,
-  "senderClientId": "abc123",
-  "hostClientId": "abc123",
-  "serverTime": 123456789
-}
-```
-
-## Sync Behavior
-
-### PLAY
-- Browser sends PLAY with current timestamp.
-- Spring updates room state.
-- Spring broadcasts PLAY.
-
-### PAUSE
-- Browser sends PAUSE with timestamp.
-- Spring updates room state.
-- Spring broadcasts PAUSE.
-
-### SEEK
-- Explicit user seek should immediately move all participants.
-- SEEK must preserve the server-authoritative room play/pause state.
-- A guest that is locally paused because of autoplay blocking must not accidentally pause the whole room when seeking.
-
-## Drift Correction
-
-Current target behavior:
-
-```text
-drift <= 250 ms
-→ ignore
-
-250 ms to 1.5 s
-→ use temporary playbackRate correction
-   0.97x or 1.03x
-
-drift > 1.5 s
-→ hard seek
-```
-
-Important:
-- Periodic STATE messages should not trigger frequent hard seeks.
-- Small drift should not cause visible jumps or extra media range requests.
-- `serverTime` compensation should be used to estimate the current authoritative playback position when the room is playing.
-
-Concept:
-
-```ts
-target =
-  event.playing
-    ? event.time + (Date.now() - event.serverTime) / 1000
-    : event.time
-```
-
-## Join In Progress
-
-When a new guest joins a playing room:
-
-```text
-Room currently around 32:15
-        ↓
-Guest joins
-        ↓
-Spring sends authoritative room state
-        ↓
-Guest seeks near current position
-        ↓
-Guest starts playback if browser allows
-```
-
-## Autoplay Handling
-
-Browsers may reject programmatic `video.play()` before a user gesture.
-
-Expected behavior:
-- Do not treat this as an app failure.
-- Show an overlay:
-  `▶ Start synced playback`
-- Clicking the overlay should:
-  - count as user interaction
-  - seek to current room position if necessary
-  - start playback
-  - remove the overlay
-
-## Sync / Buffering Overlays
-
-GIF assets:
-
-```text
-frontend/public/sync/
-├── host-syncing.gif
-└── client-syncing.gif
-```
-
-Expected labels:
-
-```text
-Host-originated seek
-→ Host syncing...
-
-Guest-originated seek
-→ Guest syncing...
-
-Actual media waiting/stalled
-→ Buffering...
-```
-
-Important:
-- Only one status overlay should be visible at a time.
-- Do not show both “syncing” and “buffering” simultaneously.
-- `waiting` / `stalled` should trigger Buffering.
-- `playing` / `canplay` should clear Buffering.
-- The browser that initiated a seek should not mislabel its own echoed event as remote.
-
-## Copy Invite
-
-Copy invite should create:
-
-```text
-http://localhost:5173/room/ABC123?guest=1
-```
-
-Production equivalent should use the production origin automatically.
-
-Toast:
-
-```text
-Guest invite copied!
-```
-
-## Google Picker
-
-Frontend environment variables:
-
-```env
-VITE_API_URL=http://localhost:8080
-
-VITE_GOOGLE_CLIENT_ID=...
-VITE_GOOGLE_API_KEY=...
-VITE_GOOGLE_APP_ID=...
-```
-
-Definitions:
-- `VITE_GOOGLE_CLIENT_ID` = OAuth web client ID
-- `VITE_GOOGLE_API_KEY` = browser API key
-- `VITE_GOOGLE_APP_ID` = Google Cloud project number
-
-Required APIs:
-- Google Drive API
-- Google Picker API
-
-OAuth scope:
-
-```text
-https://www.googleapis.com/auth/drive.file
-```
-
-Picker builder should use:
-- `setAppId(APP_ID)`
-- `setOAuthToken(accessToken)`
-- `setDeveloperKey(API_KEY)`
-- `setOrigin(top page protocol + host)`
-
-Expected local origin:
-
-```text
-http://localhost:5173
-```
-
-## Google Auth Philosophy
-
-Current desired behavior:
-- Use Google Identity Services' popup authorization-code flow.
-- Keep the short-lived Picker access token in browser memory only.
-- Store the refresh token only in an encrypted, HTTP-only connection cookie.
-- Refresh each room's Drive access token on the backend before it expires.
-- Restore the selected Google connection without another account chooser.
-- Keep room state and active room credentials in server memory.
-- Manual Disconnect revokes Google authorization and clears the cookie.
-- Do not add SyncWatch user accounts or database persistence for Google tokens.
-
-## Google Picker 401 Issue
-
-Observed issue:
-
-```text
-GET https://docs.google.com/picker?... 401 Unauthorized
-```
-
-Also observed Picker request containing:
-
-```text
-parent=http://localhost:5173/favicon.ico
-```
-
-Work already attempted:
-- Added explicit `setOrigin(...)`.
-- Picker origin should be top-level protocol + host.
-
-Need to verify:
-1. 401 is gone after current Picker patch.
-2. `parent` / origin is correct.
-3. Google Drive API enabled.
-4. Google Picker API enabled.
-5. API key referrer restrictions include local origin.
-6. OAuth Authorized JavaScript origin includes local origin.
-7. App ID is Cloud project number.
-8. Fresh short-lived token is requested on each Picker action.
-
-Do not log OAuth access tokens intentionally.
-
-## Browser Console Noise
-
-Ignore unless behavior is broken:
-- React DevTools development notice
-- Browser extension errors
-- Passive listener warnings from Google Picker
-- favicon 404
-- Tracking Prevention warnings if Picker still works
-
-Relevant:
-- Picker 401
-- Spring HTTP errors
-- STOMP connection errors
-- media `waiting` / `stalled`
-- failed stream range requests
-
-## Video Buffering
-
-Native HTML5 video controls its own preloading strategy.
-
-Current:
-- `preload="auto"`
-
-Important:
-- Browser may stop preloading after enough media is buffered.
-- `preload="auto"` is a hint, not a guarantee to download entire file.
-- Different clients may buffer different amounts.
-- This is normal.
-
-Do not replace the media stack just to force full download unless there is a real need.
-
-## Player Strategy
-
-Current recommendation:
-- Keep native `<video>` for v0.3.
-- Do not move to Video.js/Shaka/HLS/DASH yet.
-- Preserve low complexity and original-quality progressive playback.
-- Advanced player stack can be considered in v0.4+.
-
-## Smooth Playback Priority
-
-Current v0.3 priority:
-1. Avoid unnecessary hard seeks.
-2. Keep drift small using playbackRate.
-3. Only show Buffering on real media stall.
-4. Keep quality untouched.
-5. Do not overcomplicate the media path.
-
-## Current Testing
-
-Test using:
-- normal Chrome/Edge tab
-- Incognito/InPrivate tab
-- same room
-
-Expected checklist:
-
-```text
-Create room              ✓
-Choose Drive file        ✓
-Host role assigned       ✓
-Copy guest invite        ✓
-Guest joins              ✓
-Guest picker hidden      ✓
-Both show Synced         ✓
-Play sync                ✓
-Pause sync               ✓
-Host seek                ✓
-Guest seek               ✓
-Guest seek does not pause room ✓
-Join mid-play            ✓
-Autoplay overlay         ✓
-Reconnect                ✓
-Smooth drift correction  ✓
-Buffering overlay        ✓
-No duplicate overlays    ✓
-Picker 401 gone          ✓
-Long playback test       ✓
-```
-
-## Quality Requirement
-
-Non-negotiable:
-- No intentional quality loss.
-- No transcoding.
-- No bitrate reduction.
-- No resolution reduction.
-- No audio conversion.
-
-Current media path should remain byte-for-byte proxy style wherever possible.
-
-## Out of Scope for v0.3
-
-Do not add unless explicitly requested:
-- User accounts
-- Database
-- Chat
-- Reactions
-- Profiles
-- Admin panel
-- Redis
-- FFmpeg
-- Transcoding
-- Upload system
-- Playlist system
-- Complex permissions
-- Persistent login/session system
-
-## v0.3 Definition of Done
-
-v0.3 is considered usable when:
-
-1. Host selects Drive file.
-2. Guest opens invite.
-3. Both stream same original file.
-4. Play/pause/seek sync works reliably.
-5. Guest seek does not break room play state.
-6. Join-in-progress works.
-7. Drift remains low over several minutes.
-8. No repeated hard-seek stutter.
-9. Autoplay blocking has a clear user-action overlay.
-10. Real buffering has a clear status overlay.
-11. Host/guest role labels are correct.
-12. Guest cannot replace host Drive file.
-13. Google Picker works reliably without recurring 401.
-14. App remains lightweight.
-
-## Next Work
-
-Before declaring v0.3 complete:
-
-1. Test the latest host-role patch.
-2. Verify host becomes `★ Host` only after Drive selection.
-3. Verify copied invite ends with `?guest=1`.
-4. Verify guest has no Drive picker.
-5. Verify host and guest seek labels are correct.
-6. Verify sender does not process its own SEEK as remote.
-7. Verify real buffering overlay replaces sync overlay instead of stacking.
-8. Verify Picker 401 is resolved.
-9. Run 2–3 minute uninterrupted playback test.
-10. Test reconnect.
-11. Then commit/tag v0.3.
-
-## Git
-
-Current branch:
-
-```text
-v0.3-sync
-```
-
-Do not tag v0.3 until the final test checklist passes.
+See README.md for current setup, environment variables, and production cookie/database requirements.
