@@ -85,6 +85,28 @@ class RoomPresenceServiceTest {
     }
 
     @Test
+    void replacementBeforeOldDisconnectDoesNotGenerateDepartureOrTransferHost() throws Exception {
+        Room room = rooms.create("Test room");
+        claimHost(room, "stable-client");
+        register(room, "stable-client", "Host", "old-session");
+        register(room, "waiting-client", "Other", "waiting-session");
+        Room.ParticipantRegistration replacement =
+                register(room, "stable-client", "Host", "new-session");
+
+        presence.scheduleDisconnect("old-session");
+        presence.scheduleDisconnect("old-session");
+        Thread.sleep(120);
+
+        assertThat(replacement.joined()).isFalse();
+        assertThat(room.getParticipants()).hasSize(2);
+        assertThat(room.isHost("stable-client")).isTrue();
+        assertThat(room.getClientIdForSession("new-session")).isEqualTo("stable-client");
+        assertThat(room.getClientIdForSession("old-session")).isNull();
+        assertThat(chatService.history(room.getId())).isEmpty();
+        verify(messaging, never()).convertAndSend(anyString(), any(Object.class));
+    }
+
+    @Test
     void disconnectWithoutReconnectRemovesEmptyRoomAfterOneLeave() {
         Room room = rooms.create("Test room");
         claimHost(room, "stable-client");

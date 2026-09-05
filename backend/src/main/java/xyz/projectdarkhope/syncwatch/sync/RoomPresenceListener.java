@@ -23,7 +23,8 @@ public class RoomPresenceListener {
 
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
-        log.info("STOMP connection disconnected; starting presence evaluation");
+        log.info("STOMP connection disconnected; closeCode={}; starting presence evaluation",
+                event.getCloseStatus().getCode());
         presence.scheduleDisconnect(event.getSessionId());
     }
 }

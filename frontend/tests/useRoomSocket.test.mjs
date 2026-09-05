@@ -1,0 +1,182 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+
+// Schedule delayed transport callbacks across effect cleanup without a browser.
+const source = ts.transpileModule(
+  readFileSync(new URL("../src/useRoomSocket.ts", import.meta.url), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }
+).outputText;
+
+function harness() {
+  const slots = [], clients = [], logs = [];
+  const storage = new Map();
+  let cursor = 0, pending = [];
+  const same = (a, b) => a && b && a.length === b.length
+    && a.every((value, index) => Object.is(value, b[index]));
+  const react = {
+    useRef(value) { return slots[cursor++] ??= { current: value }; },
+    useState(initial) {
+      const index = cursor++;
+      slots[index] ??= { value: typeof initial === "function" ? initial() : initial };
+      return [slots[index].value, value => {
+        slots[index].value = typeof value === "function" ? value(slots[index].value) : value;
+      }];
+    },
+    useCallback(callback, deps) {
+      const index = cursor++;
+      if (!same(slots[index]?.deps, deps)) slots[index] = { deps, callback };
+      return slots[index].callback;
+    },
+    useEffect(effect, deps) {
+      const index = cursor++;
+      if (!same(slots[index]?.deps, deps)) pending.push(() => {
+        slots[index]?.cleanup?.();
+        slots[index] = { deps, cleanup: effect() };
+      });
+    }
+  };
+  class Client {
+    connected = false;
+    subscriptions = [];
+    published = [];
+    deactivations = 0;
+    constructor(config) { Object.assign(this, config); clients.push(this); }
+    activate() {}
+    deactivate() { this.deactivations++; return Promise.resolve(); }
+    subscribe(destination, callback) { this.subscriptions.push({ destination, callback }); }
+    publish(frame) { this.published.push(frame); }
+    connect() {
+      this.connected = true;
+      this.subscriptions = [];
+      this.onConnect({ headers: { "heart-beat": "10000,10000" } });
+    }
+    close() {
+      this.connected = false;
+      this.onWebSocketClose({ code: 1006, wasClean: false });
+    }
+  }
+  const exports = {};
+  runInNewContext(source, {
+    exports,
+    require: name => {
+      if (name === "react") return react;
+      if (name === "@stomp/stompjs") return { Client, TickerStrategy: { Worker: "worker" } };
+      if (name === "./api") return { API_URL: "http://localhost:8080" };
+      throw new Error(name);
+    },
+    sessionStorage: {
+      getItem: key => storage.get(key),
+      setItem: (key, value) => storage.set(key, value),
+      removeItem: key => storage.delete(key)
+    },
+    document: { visibilityState: "visible" },
+    navigator: { onLine: true },
+    console: { info: (...args) => logs.push(args), warn: (...args) => logs.push(args) }
+  });
+  return {
+    clients, logs,
+    render(room = "ROOM", name = "Name") {
+      cursor = 0;
+      const result = exports.useRoomSocket(room, name, "stable-client");
+      const effects = pending;
+      pending = [];
+      effects.forEach(effect => effect());
+      return result;
+    },
+    unmount() { slots.forEach(slot => slot.cleanup?.()); }
+  };
+}
+
+test("no room has no connection; ordinary rerenders keep a single client", () => {
+  const h = harness();
+  h.render("");
+  assert.equal(h.clients.length, 0);
+  h.render();
+  h.clients[0].connect();
+  assert.equal(h.render().connected, true);
+  h.render();
+  assert.equal(h.clients.length, 1);
+  assert.equal(h.clients[0].deactivations, 0);
+});
+
+test("transient reconnect re-subscribes and JOINs with the same identity", () => {
+  const h = harness();
+  h.render();
+  const client = h.clients[0];
+  client.connect();
+  client.subscriptions[0].callback({ body: JSON.stringify({
+    type: "STATE", time: 150, playing: true
+  }) });
+  client.close();
+  assert.equal(h.render().connected, false);
+  assert.equal(h.render().lastEvent.time, 150);
+  client.connect();
+  assert.equal(client.subscriptions.length, 2);
+  assert.equal(client.published.length, 2);
+  for (const frame of client.published) {
+    assert.equal(JSON.parse(frame.body).type, "JOIN");
+    assert.equal(JSON.parse(frame.body).clientId, "stable-client");
+  }
+  client.subscriptions[0].callback({ body: JSON.stringify({
+    type: "PARTICIPANTS", participants: [{ clientId: "stable-client" }]
+  }) });
+  assert.equal(h.render().chatReady, true);
+});
+
+test("a replaced client's delayed close cannot disconnect its replacement", () => {
+  const h = harness();
+  h.render();
+  const old = h.clients[0];
+  old.connect();
+  h.render("NEXT");
+  h.clients[1].connect();
+  old.close();
+  assert.equal(h.render("NEXT").connected, true);
+  assert.equal(old.deactivations, 1);
+});
+
+test("late callbacks after cleanup cannot JOIN or overwrite state", () => {
+  const h = harness();
+  h.render();
+  const old = h.clients[0];
+  old.connect();
+  const staleMessage = old.subscriptions[0].callback;
+  h.render("NEXT");
+  h.clients[1].connect();
+  old.connect();
+  staleMessage({ body: JSON.stringify({ type: "STATE", time: 0 }) });
+  assert.equal(old.published.length, 1);
+  assert.equal(h.render("NEXT").lastEvent, null);
+});
+
+test("leaving clears connected state before the transport close arrives", () => {
+  const h = harness();
+  h.render();
+  h.clients[0].connect();
+  h.render("");
+  assert.equal(h.render("").connected, false);
+});
+
+test("heartbeat diagnostics record lifecycle without exposing frame contents", () => {
+  const h = harness();
+  h.render();
+  const client = h.clients[0];
+  assert.equal(client.heartbeatStrategy, "worker");
+  assert.equal(client.heartbeatIncoming, 10000);
+  assert.equal(client.heartbeatOutgoing, 10000);
+  assert.equal(client.reconnectDelay, 2000);
+  client.beforeConnect();
+  client.connect();
+  client.onHeartbeatLost();
+  client.onStompError({ body: "private-data", headers: { message: "private-data" } });
+  client.onWebSocketClose({ code: 1006, wasClean: false, reason: "private-data" });
+  assert.ok(h.logs.some(([, log]) => log.event === "heartbeat-lost"));
+  assert.ok(h.logs.some(([, log]) => log.event === "transport-closed" && log.code === 1006));
+  const output = JSON.stringify(h.logs);
+  for (const sensitive of ["private-data", "stable-client", "ROOM", "Name"]) {
+    assert.equal(output.includes(sensitive), false);
+  }
+});
