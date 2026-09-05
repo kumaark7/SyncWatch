@@ -12,12 +12,13 @@ import { getAuthSession, login, logout, signUp, type AuthSession } from "./authA
 type AuthContextValue = {
   session: AuthSession;
   loading: boolean;
-  signIn: (identifier: string, password: string) => Promise<void>;
+  signIn: (identifier: string, password: string, rememberMe: boolean) => Promise<void>;
   signUp: (
     username: string,
     email: string,
     password: string,
-    confirmPassword: string
+    confirmPassword: string,
+    rememberMe: boolean
   ) => Promise<void>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<AuthSession>;
@@ -98,11 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     session,
     loading,
-    signIn: async (identifier, password) => {
-      setSession(await login(identifier, password));
+    signIn: async (identifier, password, rememberMe) => {
+      setSession(await login(identifier, password, rememberMe));
     },
-    signUp: async (username, email, password, confirmPassword) => {
-      setSession(await signUp(username, email, password, confirmPassword));
+    signUp: async (username, email, password, confirmPassword, rememberMe) => {
+      setSession(await signUp(username, email, password, confirmPassword, rememberMe));
     },
     signOut: async () => {
       setSession(await logout());

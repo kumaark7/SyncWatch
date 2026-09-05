@@ -2443,6 +2443,21 @@ button.chatToastOpen:hover:not(:disabled) {
   padding: 0;
 }
 .loginButton { width: 100%; }
+.rememberMeOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  color: #cbd5e1;
+  font-size: 14px;
+  cursor: pointer;
+}
+.rememberMeOption input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
 .loginError { color: #fecaca; font-size: 14px; }
 
 @media (max-width: 430px) {

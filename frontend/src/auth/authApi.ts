@@ -37,14 +37,18 @@ async function authError(response: Response, fallback: string) {
   return new Error(body?.error || fallback);
 }
 
-export async function login(identifier: string, password: string) {
+export async function login(
+  identifier: string,
+  password: string,
+  rememberMe: boolean
+) {
   const response = await fetch(`${API_URL}/api/auth/login`, {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ identifier, password })
+    body: JSON.stringify({ identifier, password, rememberMe })
   });
 
   if (!response.ok) {
@@ -58,7 +62,8 @@ export async function signUp(
   username: string,
   email: string,
   password: string,
-  confirmPassword: string
+  confirmPassword: string,
+  rememberMe: boolean
 ) {
   const response = await fetch(`${API_URL}/api/auth/signup`, {
     method: "POST",
@@ -66,7 +71,13 @@ export async function signUp(
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ username, email, password, confirmPassword })
+    body: JSON.stringify({
+      username,
+      email,
+      password,
+      confirmPassword,
+      rememberMe
+    })
   });
 
   if (!response.ok) {

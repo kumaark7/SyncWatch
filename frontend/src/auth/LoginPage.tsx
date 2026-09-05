@@ -4,12 +4,13 @@ import type { FormEvent } from "react";
 
 type Props = {
   inviteRoomId: string;
-  onSignIn: (identifier: string, password: string) => Promise<void>;
+  onSignIn: (identifier: string, password: string, rememberMe: boolean) => Promise<void>;
   onSignUp: (
     username: string,
     email: string,
     password: string,
-    confirmPassword: string
+    confirmPassword: string,
+    rememberMe: boolean
   ) => Promise<void>;
 };
 
@@ -21,6 +22,7 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -42,9 +44,9 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
         if (password !== confirmPassword) {
           throw new Error("Passwords do not match");
         }
-        await onSignUp(username, email, password, confirmPassword);
+        await onSignUp(username, email, password, confirmPassword, rememberMe);
       } else {
-        await onSignIn(identifier, password);
+        await onSignIn(identifier, password, rememberMe);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Authentication failed");
@@ -172,6 +174,16 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
             />
           </label>
         )}
+
+        <label className="rememberMeOption">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(event) => setRememberMe(event.target.checked)}
+            disabled={loading}
+          />
+          Keep me signed in
+        </label>
 
         {error && <div className="loginError" role="alert">{error}</div>}
 

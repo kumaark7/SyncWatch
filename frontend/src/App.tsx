@@ -88,11 +88,11 @@ function AppContent() {
     return (
       <LoginPage
         inviteRoomId={inviteRoomId}
-        onSignIn={(identifier, password) => authenticate(
-          () => auth.signIn(identifier, password)
+        onSignIn={(identifier, password, rememberMe) => authenticate(
+          () => auth.signIn(identifier, password, rememberMe)
         )}
-        onSignUp={(username, email, password, confirmPassword) => authenticate(
-          () => auth.signUp(username, email, password, confirmPassword)
+        onSignUp={(username, email, password, confirmPassword, rememberMe) => authenticate(
+          () => auth.signUp(username, email, password, confirmPassword, rememberMe)
         )}
       />
     );

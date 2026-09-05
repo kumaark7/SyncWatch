@@ -1,6 +1,7 @@
 package xyz.projectdarkhope.syncwatch.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,32 +16,50 @@ import java.util.Map;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService authService;
+    private final RememberMeService rememberMe;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RememberMeService rememberMe) {
         this.authService = authService;
+        this.rememberMe = rememberMe;
     }
 
     @GetMapping("/session")
-    public AuthSessionResponse session(HttpServletRequest request) {
+    public AuthSessionResponse session(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
         HttpSession session = request.getSession(false);
-        return authService.sessionUser(session)
-                .map(AuthSessionResponse::authenticated)
-                .orElseGet(() -> {
-                    if (session != null) {
-                        session.invalidate();
-                    }
-                    return AuthSessionResponse.signedOut();
-                });
+        UserAccount currentUser = authService.sessionUser(session).orElse(null);
+        if (currentUser != null) {
+            return AuthSessionResponse.authenticated(currentUser);
+        }
+
+        UserAccount rememberedUser = rememberMe.restore(request, response).orElse(null);
+        if (rememberedUser != null) {
+            establishSession(request, rememberedUser);
+            return AuthSessionResponse.authenticated(rememberedUser);
+        }
+
+        if (session != null) {
+            session.invalidate();
+        }
+        return AuthSessionResponse.signedOut();
     }
 
     @PostMapping("/signup")
     public ResponseEntity<?> signUp(
             @RequestBody SignUpRequest signUpRequest,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
         try {
             UserAccount user = authService.register(signUpRequest);
             establishSession(request, user);
+            if (signUpRequest.rememberMe()) {
+                rememberMe.issue(user.id(), request, response);
+            } else {
+                rememberMe.revoke(request, response);
+            }
             return ResponseEntity.ok(AuthSessionResponse.authenticated(user));
         } catch (AuthException error) {
             return ResponseEntity.status(error.status()).body(Map.of("error", error.getMessage()));
@@ -50,11 +69,17 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login(
             @RequestBody LoginRequest loginRequest,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
         try {
             UserAccount user = authService.authenticate(loginRequest);
             establishSession(request, user);
+            if (loginRequest.rememberMe()) {
+                rememberMe.issue(user.id(), request, response);
+            } else {
+                rememberMe.revoke(request, response);
+            }
             return ResponseEntity.ok(AuthSessionResponse.authenticated(user));
         } catch (AuthException error) {
             return ResponseEntity.status(error.status()).body(Map.of("error", error.getMessage()));
@@ -62,7 +87,11 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public AuthSessionResponse logout(HttpServletRequest request) {
+    public AuthSessionResponse logout(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        rememberMe.revoke(request, response);
         HttpSession session = request.getSession(false);
         if (session != null) {
             session.invalidate();
