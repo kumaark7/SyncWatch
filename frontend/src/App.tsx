@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
 import ConnectionStatus from "./components/ConnectionStatus";
 import FullscreenToggle from "./components/FullscreenToggle";
@@ -85,6 +86,15 @@ function AppContent() {
   }
 
   if (!auth.session.authenticated) {
+    if (inviteRoomId) {
+      return (
+        <GuestJoinPage
+          initialRoomId={inviteRoomId}
+          onJoin={auth.joinAsGuest}
+        />
+      );
+    }
+
     return (
       <LoginPage
         inviteRoomId={inviteRoomId}
@@ -98,13 +108,21 @@ function AppContent() {
     );
   }
 
+  const guestSession = auth.session.role === "GUEST";
+  const activeRoomId = guestSession
+    ? auth.session.allowedRoomId || ""
+    : inviteRoomId;
+
   return (
     <AuthenticatedApp
-      username={auth.session.username || "User"}
-      initialRoomId={inviteRoomId}
-      initialJoinCode={homeJoinCode || inviteRoomId}
-      initialDisplayName={null}
-      sessionClientId={null}
+      username={guestSession
+        ? auth.session.displayName || "Guest"
+        : auth.session.username || "User"}
+      initialRoomId={activeRoomId}
+      initialJoinCode={guestSession ? activeRoomId : homeJoinCode || inviteRoomId}
+      initialDisplayName={guestSession ? auth.session.displayName : null}
+      sessionClientId={guestSession ? auth.session.clientId : null}
+      guestSession={guestSession}
       onLogout={auth.signOut}
       authenticatedFetch={auth.authenticatedFetch}
       revalidateSession={auth.revalidateSession}
@@ -122,6 +140,7 @@ function AuthenticatedApp({
   initialJoinCode,
   initialDisplayName,
   sessionClientId,
+  guestSession,
   onLogout,
   authenticatedFetch,
   revalidateSession,
@@ -132,6 +151,7 @@ function AuthenticatedApp({
   initialJoinCode: string;
   initialDisplayName: string | null;
   sessionClientId: string | null;
+  guestSession: boolean;
   onLogout: () => Promise<void>;
   authenticatedFetch: (
     input: RequestInfo | URL,
@@ -400,6 +420,13 @@ function AuthenticatedApp({
     if (lastEvent.type === "ROOM_CLOSED") {
       if (fullscreenCanHostOverlay) {
         void document.exitFullscreen().catch(() => undefined);
+      }
+      if (guestSession) {
+        sessionStorage.removeItem(NAME_TAG_STORAGE_KEY);
+        clearClientIdentity();
+        window.history.replaceState({}, "", "/");
+        void onLogout();
+        return;
       }
       returnToHome(true);
       return;
@@ -912,6 +939,14 @@ function AuthenticatedApp({
       ).catch(() => undefined);
     }
 
+    if (guestSession) {
+      sessionStorage.removeItem(NAME_TAG_STORAGE_KEY);
+      clearClientIdentity();
+      window.history.replaceState({}, "", "/");
+      await onLogout();
+      return;
+    }
+
     returnToHome();
   }
 
@@ -995,7 +1030,7 @@ function AuthenticatedApp({
     }
   }
 
-  const canManageGoogle = Boolean(room?.isHost);
+  const canManageGoogle = Boolean(room?.isHost && !guestSession);
   const googleActions = canManageGoogle ? (
     !googleConnection ? (
       <button
@@ -1067,7 +1102,7 @@ function AuthenticatedApp({
               Leave Room
             </button>
           )}
-          {room?.isHost && (
+          {room?.isHost && !guestSession && (
             <button className="headerCloseRoom" onClick={() => void closeRoom()}>
               Close Room
             </button>
@@ -1243,7 +1278,7 @@ function AuthenticatedApp({
                   onChatError={showToast}
                   onCopyRoom={() => void copyRoomCode()}
                   onCopyInvite={() => void copyInvite()}
-                  canTransferHost={room.isHost}
+                  canTransferHost={room.isHost && !guestSession}
                   onTransferHost={transferRoomHost}
                 />
               )}

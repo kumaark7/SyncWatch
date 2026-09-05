@@ -29,11 +29,15 @@ public class RoomPresenceController {
             @RequestParam String clientId,
             HttpServletRequest request
     ) {
-        String userId = currentUserId(request);
-        if (userId == null) {
-            return ResponseEntity.status(401).build();
+        String ownerId = authService.participantOwnerId(
+                request.getSession(false),
+                roomId,
+                clientId
+        ).orElse(null);
+        if (ownerId == null) {
+            return ResponseEntity.status(403).build();
         }
-        return switch (presence.leaveImmediately(roomId, userId, clientId)) {
+        return switch (presence.leaveImmediately(roomId, ownerId, clientId)) {
             case LEFT -> ResponseEntity.noContent().build();
             case FORBIDDEN -> ResponseEntity.status(403).build();
             case NOT_FOUND -> ResponseEntity.notFound().build();

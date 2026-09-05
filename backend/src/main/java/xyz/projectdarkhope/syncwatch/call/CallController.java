@@ -38,7 +38,7 @@ public class CallController {
             HttpServletRequest request
     ) {
         HttpSession session = request.getSession(false);
-        if (!authService.isAuthenticated(session)) {
+        if (!authService.isAuthenticated(session) && !authService.isGuestAuthenticated(session)) {
             return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
         }
 
@@ -69,8 +69,8 @@ public class CallController {
             return null;
         }
 
-        return authService.sessionUserId(session)
-                .filter(userId -> room.isParticipantOwnedBy(requestedClientId, userId))
+        return authService.participantOwnerId(session, room.getId(), requestedClientId)
+                .filter(ownerId -> room.isParticipantOwnedBy(requestedClientId, ownerId))
                 .map(ignored -> requestedClientId)
                 .orElse(null);
     }

@@ -7,7 +7,14 @@ import {
   useState
 } from "react";
 import type { ReactNode } from "react";
-import { getAuthSession, login, logout, signUp, type AuthSession } from "./authApi";
+import {
+  getAuthSession,
+  joinGuest,
+  login,
+  logout,
+  signUp,
+  type AuthSession
+} from "./authApi";
 
 type AuthContextValue = {
   session: AuthSession;
@@ -21,6 +28,7 @@ type AuthContextValue = {
     rememberMe: boolean
   ) => Promise<void>;
   signOut: () => Promise<void>;
+  joinAsGuest: (roomId: string, displayName: string) => Promise<void>;
   refreshSession: () => Promise<AuthSession>;
   revalidateSession: () => Promise<boolean>;
   authenticatedFetch: (
@@ -107,6 +115,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signOut: async () => {
       setSession(await logout());
+    },
+    joinAsGuest: async (roomId, displayName) => {
+      setSession(await joinGuest(roomId, displayName));
     },
     refreshSession,
     revalidateSession,

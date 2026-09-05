@@ -5,7 +5,7 @@ export type AuthSession = {
   userId: string | null;
   username: string | null;
   email: string | null;
-  role: "USER" | null;
+  role: "USER" | "GUEST" | null;
   allowedRoomId: string | null;
   displayName: string | null;
   clientId: string | null;
@@ -84,6 +84,44 @@ export async function signUp(
     throw await authError(response, "Could not create account");
   }
 
+  return response.json() as Promise<AuthSession>;
+}
+
+export type GuestRoom = {
+  roomId: string;
+  roomName: string;
+};
+
+export async function getGuestRoom(roomId: string) {
+  const response = await fetch(
+    `${API_URL}/api/auth/guest/rooms/${encodeURIComponent(roomId)}`,
+    { credentials: "include" }
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error("Could not check this room");
+  }
+  return response.json() as Promise<GuestRoom>;
+}
+
+export async function joinGuest(roomId: string, displayName: string) {
+  const response = await fetch(`${API_URL}/api/auth/guest`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ roomId, displayName })
+  });
+
+  if (!response.ok) {
+    throw await authError(response, response.status === 404
+      ? "Room not found"
+      : "Could not join this room");
+  }
   return response.json() as Promise<AuthSession>;
 }
 

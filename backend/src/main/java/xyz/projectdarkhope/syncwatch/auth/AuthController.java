@@ -33,6 +33,9 @@ public class AuthController {
         if (currentUser != null) {
             return AuthSessionResponse.authenticated(currentUser);
         }
+        if (authService.isGuestAuthenticated(session)) {
+            return AuthSessionResponse.guest(session);
+        }
 
         UserAccount rememberedUser = rememberMe.restore(request, response).orElse(null);
         if (rememberedUser != null) {

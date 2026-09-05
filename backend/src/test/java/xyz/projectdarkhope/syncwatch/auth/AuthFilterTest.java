@@ -34,4 +34,30 @@ class AuthFilterTest {
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getContentAsString()).contains("Authentication required");
     }
+
+    @Test
+    void guestCanReachOnlyTheirInvitedRoomApis() throws Exception {
+        MockHttpServletRequest allowed = guestRequest("GET", "/api/rooms/ABC123");
+        MockHttpServletResponse allowedResponse = new MockHttpServletResponse();
+        filter.doFilter(allowed, allowedResponse, new MockFilterChain());
+
+        MockHttpServletRequest otherRoom = guestRequest("GET", "/api/rooms/OTHER1");
+        MockHttpServletResponse otherRoomResponse = new MockHttpServletResponse();
+        filter.doFilter(otherRoom, otherRoomResponse, new MockFilterChain());
+
+        MockHttpServletRequest createRoom = guestRequest("POST", "/api/rooms");
+        MockHttpServletResponse createRoomResponse = new MockHttpServletResponse();
+        filter.doFilter(createRoom, createRoomResponse, new MockFilterChain());
+
+        assertThat(allowedResponse.getStatus()).isEqualTo(200);
+        assertThat(otherRoomResponse.getStatus()).isEqualTo(401);
+        assertThat(createRoomResponse.getStatus()).isEqualTo(401);
+    }
+
+    private MockHttpServletRequest guestRequest(String method, String path) {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        request.getSession(true).setAttribute(AuthService.SESSION_GUEST_ROOM, "ABC123");
+        when(authService.isGuestAuthenticated(request.getSession(false))).thenReturn(true);
+        return request;
+    }
 }

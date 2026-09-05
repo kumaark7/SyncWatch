@@ -20,7 +20,12 @@ public class AuthService {
     public static final String SESSION_USERNAME = "syncwatchUsername";
     public static final String SESSION_EMAIL = "syncwatchEmail";
     public static final String SESSION_ROLE = "syncwatchRole";
+    public static final String SESSION_GUEST_ID = "syncwatchGuestId";
+    public static final String SESSION_GUEST_ROOM = "syncwatchGuestRoom";
+    public static final String SESSION_DISPLAY_NAME = "syncwatchDisplayName";
+    public static final String SESSION_CLIENT_ID = "syncwatchClientId";
     public static final String ROLE_USER = "USER";
+    public static final String ROLE_GUEST = "GUEST";
 
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
@@ -116,6 +121,35 @@ public class AuthService {
                 && Boolean.TRUE.equals(session.getAttribute(SESSION_AUTHENTICATED))
                 && ROLE_USER.equals(session.getAttribute(SESSION_ROLE))
                 && session.getAttribute(SESSION_USER_ID) instanceof String;
+    }
+
+    public boolean isGuestAuthenticated(HttpSession session) {
+        return session != null
+                && Boolean.TRUE.equals(session.getAttribute(SESSION_AUTHENTICATED))
+                && ROLE_GUEST.equals(session.getAttribute(SESSION_ROLE))
+                && session.getAttribute(SESSION_GUEST_ID) instanceof String
+                && session.getAttribute(SESSION_GUEST_ROOM) instanceof String
+                && session.getAttribute(SESSION_DISPLAY_NAME) instanceof String
+                && session.getAttribute(SESSION_CLIENT_ID) instanceof String;
+    }
+
+    public Optional<String> participantOwnerId(
+            HttpSession session,
+            String roomId,
+            String clientId
+    ) {
+        Optional<String> userId = sessionUserId(session);
+        if (userId.isPresent()) {
+            return userId;
+        }
+        if (roomId == null
+                || clientId == null
+                || !isGuestAuthenticated(session)
+                || !roomId.equalsIgnoreCase((String) session.getAttribute(SESSION_GUEST_ROOM))
+                || !clientId.equals(session.getAttribute(SESSION_CLIENT_ID))) {
+            return Optional.empty();
+        }
+        return Optional.of((String) session.getAttribute(SESSION_GUEST_ID));
     }
 
     private AuthException validation(String message) {

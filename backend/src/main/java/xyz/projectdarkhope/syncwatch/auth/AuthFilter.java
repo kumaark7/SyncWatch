@@ -44,9 +44,34 @@ public class AuthFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
+        if (authService.isGuestAuthenticated(session) && guestRequestAllowed(request, session)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
         response.getWriter().write("{\"error\":\"Authentication required\"}");
+    }
+
+    private boolean guestRequestAllowed(HttpServletRequest request, HttpSession session) {
+        String roomId = (String) session.getAttribute(AuthService.SESSION_GUEST_ROOM);
+        String path = request.getRequestURI();
+        String method = request.getMethod();
+        if ("/ws".equals(path)) {
+            return true;
+        }
+        if (("GET".equals(method) || "HEAD".equals(method))
+                && path.equals("/api/stream/" + roomId)) {
+            return true;
+        }
+
+        String roomPath = "/api/rooms/" + roomId;
+        if ("GET".equals(method)) {
+            return path.equals(roomPath)
+                    || path.equals(roomPath + "/chat")
+                    || path.equals(roomPath + "/call/token");
+        }
+        return "POST".equals(method) && path.equals(roomPath + "/leave");
     }
 }

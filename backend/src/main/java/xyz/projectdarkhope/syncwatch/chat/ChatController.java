@@ -132,12 +132,13 @@ public class ChatController {
             @RequestParam String clientId,
             HttpServletRequest request
     ) {
-        String userId = authService.sessionUserId(request.getSession(false)).orElse(null);
-        if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
-        }
         return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
-            if (!room.isParticipantOwnedBy(clientId, userId)) {
+            String ownerId = authService.participantOwnerId(
+                    request.getSession(false),
+                    room.getId(),
+                    clientId
+            ).orElse(null);
+            if (ownerId == null || !room.isParticipantOwnedBy(clientId, ownerId)) {
                 return ResponseEntity.status(403).body(Map.of("error", "Join the room before reading chat"));
             }
 

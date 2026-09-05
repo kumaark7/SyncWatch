@@ -57,12 +57,24 @@ public class SyncController {
 
         String effectiveClientId = message.clientId();
         String participantName = message.nameTag();
-        String userId = sessionAttributes == null
+        String participantOwnerId = sessionAttributes == null
                 ? null
                 : sessionAttributes.get(AuthService.SESSION_USER_ID) instanceof String value
                         ? value
                         : null;
-        if (userId == null || userId.isBlank()) {
+        if (sessionAttributes != null
+                && AuthService.ROLE_GUEST.equals(sessionAttributes.get(AuthService.SESSION_ROLE))) {
+            if (!roomId.equalsIgnoreCase((String) sessionAttributes.get(AuthService.SESSION_GUEST_ROOM))
+                    || !(sessionAttributes.get(AuthService.SESSION_GUEST_ID) instanceof String guestId)
+                    || !(sessionAttributes.get(AuthService.SESSION_CLIENT_ID) instanceof String guestClientId)
+                    || !(sessionAttributes.get(AuthService.SESSION_DISPLAY_NAME) instanceof String guestName)) {
+                return;
+            }
+            participantOwnerId = guestId;
+            effectiveClientId = guestClientId;
+            participantName = guestName;
+        }
+        if (participantOwnerId == null || participantOwnerId.isBlank()) {
             return;
         }
 
@@ -70,7 +82,7 @@ public class SyncController {
             Room.ParticipantRegistration registration = presence.registerParticipant(
                     room,
                     effectiveClientId,
-                    userId,
+                    participantOwnerId,
                     participantName,
                     sessionId
             );
@@ -110,7 +122,7 @@ public class SyncController {
             return;
         }
 
-        if (!room.isParticipantOwnedBy(effectiveClientId, userId)) {
+        if (!room.isParticipantOwnedBy(effectiveClientId, participantOwnerId)) {
             return;
         }
 
