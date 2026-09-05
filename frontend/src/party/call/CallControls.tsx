@@ -7,6 +7,8 @@ import {
   MicOff,
   PhoneOff,
   Radio,
+  ScreenShare,
+  ScreenShareOff,
   SlidersHorizontal,
   Video,
   VideoOff
@@ -14,6 +16,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import CallDeviceMenu from "./CallDeviceMenu";
 import CallQualityMenu from "./CallQualityMenu";
+import CallScreenShareMenu from "./CallScreenShareMenu";
 import { useCall } from "./CallProvider";
 import { usePushToTalk } from "./PushToTalkProvider";
 
@@ -30,7 +33,11 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
   } = useLocalParticipant();
   const {
     setCameraEnabled,
-    switchInputDevice
+    switchInputDevice,
+    isScreenSharing,
+    screenShareBlocked,
+    canManageGuestScreenSharing,
+    toggleScreenShare
   } = useCall();
   const {
     enabled: pushToTalkEnabled,
@@ -40,13 +47,14 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
     togglePushToTalk,
     clearError: clearPushToTalkError
   } = usePushToTalk();
-  const [busyControl, setBusyControl] = useState<"mic" | "camera" | "leave" | null>(null);
+  const [busyControl, setBusyControl] = useState<"mic" | "camera" | "share" | "leave" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openMenu, setOpenMenu] = useState<"audioinput" | "videoinput" | "quality" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"audioinput" | "videoinput" | "quality" | "screen-share" | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const microphoneMenuButtonRef = useRef<HTMLButtonElement>(null);
   const cameraMenuButtonRef = useRef<HTMLButtonElement>(null);
   const qualityMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const screenShareMenuButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!openMenu) {
@@ -58,7 +66,7 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
       if (
         target instanceof Node &&
         !controlsRef.current?.contains(target) &&
-        !(target instanceof Element && target.closest(".callDeviceMenu, .callQualityMenu"))
+        !(target instanceof Element && target.closest(".callDeviceMenu, .callQualityMenu, .callScreenShareMenu"))
       ) {
         setOpenMenu(null);
       }
@@ -101,6 +109,18 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
       await setCameraEnabled(!isCameraEnabled);
     } catch {
       setError("Camera permission was not available");
+    } finally {
+      setBusyControl(null);
+    }
+  }
+
+  async function toggleScreenShareControl() {
+    setBusyControl("share");
+    setError(null);
+    try {
+      await toggleScreenShare();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Screen sharing could not be started");
     } finally {
       setBusyControl(null);
     }
@@ -161,6 +181,51 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
               onSelectDevice={switchInputDevice}
               onClose={() => setOpenMenu(null)}
               onError={setError}
+            />
+          )}
+        </div>
+        <div
+          className={canManageGuestScreenSharing
+            ? "callControlCluster callScreenShareCluster"
+            : "callScreenShareCluster"}
+        >
+          <button
+            className={`callControlIcon ${canManageGuestScreenSharing ? "callControlMain" : ""} ${isScreenSharing ? "active" : ""}`}
+            disabled={busyControl !== null || screenShareBlocked}
+            aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}
+            aria-pressed={isScreenSharing}
+            title={screenShareBlocked
+              ? "The Host has disabled guest screen sharing"
+              : isScreenSharing ? "Stop sharing screen" : "Share screen"}
+            onFocus={onInteract}
+            onPointerDown={onInteract}
+            onClick={() => void toggleScreenShareControl()}
+          >
+            {isScreenSharing
+              ? <ScreenShareOff size={17} strokeWidth={2.2} aria-hidden="true" />
+              : <ScreenShare size={17} strokeWidth={2.2} aria-hidden="true" />}
+          </button>
+          {canManageGuestScreenSharing && <button
+            ref={screenShareMenuButtonRef}
+            className="callDeviceMenuTrigger"
+            aria-label="Screen sharing permissions"
+            title="Screen sharing permissions"
+            aria-haspopup="dialog"
+            aria-expanded={openMenu === "screen-share"}
+            onFocus={onInteract}
+            onPointerDown={onInteract}
+            onClick={() => setOpenMenu((current) => (
+              current === "screen-share" ? null : "screen-share"
+            ))}
+          >
+            {openMenu === "screen-share"
+              ? <ChevronUp size={14} strokeWidth={2.6} aria-hidden="true" />
+              : <ChevronDown size={14} strokeWidth={2.6} aria-hidden="true" />}
+          </button>}
+          {canManageGuestScreenSharing && openMenu === "screen-share" && (
+            <CallScreenShareMenu
+              anchorRef={screenShareMenuButtonRef}
+              onClose={() => setOpenMenu(null)}
             />
           )}
         </div>

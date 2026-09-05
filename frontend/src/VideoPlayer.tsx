@@ -29,6 +29,7 @@ type Props = {
 
 export type VideoPlayerHandle = {
   togglePlayback: () => void;
+  pausePlayback: () => void;
   seekBy: (offsetSeconds: number) => void;
   changeVolumeBy: (offset: number) => void;
 };
@@ -271,6 +272,20 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       }
 
       requestGesturePlayback(video.paused ? "play" : "pause");
+    },
+    pausePlayback: () => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) {
+        return;
+      }
+
+      // Suppress the native pause callback and send the same authoritative
+      // PAUSE command once, even during a recent remote synchronization.
+      beginRemoteApply(800);
+      resetRate(video);
+      video.pause();
+      authoritativePlayingRef.current = false;
+      props.onControl("PAUSE", video.currentTime, false);
     },
     seekBy: requestSynchronizedSeek,
     changeVolumeBy: (offset) => {

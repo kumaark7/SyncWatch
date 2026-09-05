@@ -79,10 +79,14 @@ public class AuthFilter extends OncePerRequestFilter {
                     || path.equals(roomPath + "/call/token");
         }
         if ("POST".equals(method)) {
-            return path.equals(roomPath + "/leave") || path.equals(roomPath + "/file");
+            return path.equals(roomPath + "/leave")
+                    || path.equals(roomPath + "/file")
+                    || path.equals(roomPath + "/screen-share/start")
+                    || path.equals(roomPath + "/screen-share/stop");
         }
         if ("PUT".equals(method)) {
-            return path.equals(roomPath + "/drive-token");
+            return path.equals(roomPath + "/drive-token")
+                    || path.equals(roomPath + "/screen-share/guest-access");
         }
         return "DELETE".equals(method) && path.equals(roomPath + "/file");
     }

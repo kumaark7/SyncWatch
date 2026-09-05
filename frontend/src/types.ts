@@ -8,6 +8,9 @@ export type RoomState = {
   serverTime: number;
   hostAssigned: boolean;
   isHost: boolean;
+  screenSharerClientId: string | null;
+  screenSharerName: string | null;
+  guestScreenSharingAllowed: boolean;
 };
 
 export type SyncEvent = {
@@ -19,6 +22,7 @@ export type SyncEvent = {
     | "FILE_SELECTED"
     | "FILE_CLEARED"
     | "PARTICIPANTS"
+    | "SCREEN_SHARE"
     | "ROOM_CLOSED";
   time: number;
   playing: boolean;
@@ -28,6 +32,9 @@ export type SyncEvent = {
   hostClientId?: string | null;
   seekId?: number | null;
   participants?: Participant[] | null;
+  screenSharerClientId?: string | null;
+  screenSharerName?: string | null;
+  guestScreenSharingAllowed?: boolean;
 };
 
 export type Participant = {

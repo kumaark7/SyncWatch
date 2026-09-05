@@ -16,6 +16,7 @@ import type { ChatMessage } from "./party/chat/types";
 import CallProvider from "./party/call/CallProvider";
 import FloatingCallWindow from "./party/call/FloatingCallWindow";
 import PushToTalkProvider from "./party/call/PushToTalkProvider";
+import ScreenShareStage from "./party/call/ScreenShareStage";
 import useFullscreenState from "./party/call/useFullscreenState";
 import type { PartyTab } from "./party/types";
 import RoomKeyboardShortcuts from "./RoomKeyboardShortcuts";
@@ -438,7 +439,22 @@ function AuthenticatedApp({
       setRoom((previous) => previous ? {
         ...previous,
         hostAssigned: Boolean(lastEvent.hostClientId),
-        isHost: lastEvent.hostClientId === clientId
+        isHost: lastEvent.hostClientId === clientId,
+        screenSharerClientId: lastEvent.screenSharerClientId ?? null,
+        screenSharerName: lastEvent.screenSharerName ?? null,
+        guestScreenSharingAllowed:
+          lastEvent.guestScreenSharingAllowed ?? previous.guestScreenSharingAllowed
+      } : previous);
+      return;
+    }
+
+    if (lastEvent.type === "SCREEN_SHARE") {
+      setRoom((previous) => previous ? {
+        ...previous,
+        screenSharerClientId: lastEvent.screenSharerClientId ?? null,
+        screenSharerName: lastEvent.screenSharerName ?? null,
+        guestScreenSharingAllowed:
+          lastEvent.guestScreenSharingAllowed ?? previous.guestScreenSharingAllowed
       } : previous);
       return;
     }
@@ -460,7 +476,11 @@ function AuthenticatedApp({
           currentTime: 0,
           serverTime: lastEvent.serverTime,
           hostAssigned: true,
-          isHost
+          isHost,
+          screenSharerClientId: lastEvent.screenSharerClientId ?? null,
+          screenSharerName: lastEvent.screenSharerName ?? null,
+          guestScreenSharingAllowed:
+            lastEvent.guestScreenSharingAllowed ?? previous.guestScreenSharingAllowed
         };
       }
 
@@ -475,7 +495,11 @@ function AuthenticatedApp({
           currentTime: 0,
           serverTime: lastEvent.serverTime,
           hostAssigned: Boolean(eventHost) || previous.hostAssigned,
-          isHost: eventHost ? isHost : previous.isHost
+          isHost: eventHost ? isHost : previous.isHost,
+          screenSharerClientId: lastEvent.screenSharerClientId ?? null,
+          screenSharerName: lastEvent.screenSharerName ?? null,
+          guestScreenSharingAllowed:
+            lastEvent.guestScreenSharingAllowed ?? previous.guestScreenSharingAllowed
         };
       }
 
@@ -485,7 +509,11 @@ function AuthenticatedApp({
         currentTime: lastEvent.time,
         serverTime: lastEvent.serverTime,
         hostAssigned: Boolean(eventHost) || previous.hostAssigned,
-        isHost: eventHost ? isHost : previous.isHost
+        isHost: eventHost ? isHost : previous.isHost,
+        screenSharerClientId: lastEvent.screenSharerClientId ?? null,
+        screenSharerName: lastEvent.screenSharerName ?? null,
+        guestScreenSharingAllowed:
+          lastEvent.guestScreenSharingAllowed ?? previous.guestScreenSharingAllowed
       };
     });
   }, [lastEvent, clientId]);
@@ -1210,6 +1238,12 @@ function AuthenticatedApp({
         <CallProvider
           roomId={roomId}
           clientId={clientId}
+          isHost={room.isHost}
+          isGuest={guestSession}
+          guestScreenSharingAllowed={room.guestScreenSharingAllowed}
+          screenSharerClientId={room.screenSharerClientId}
+          authenticatedFetch={authenticatedFetch}
+          onScreenShareStarted={() => videoPlayerRef.current?.pausePlayback()}
           onCallJoined={sendCallJoined}
           onCallLeft={sendCallLeft}
         >
@@ -1235,10 +1269,17 @@ function AuthenticatedApp({
                     fileName={room.fileName}
                     initialTime={room.currentTime}
                     initialPlaying={room.playing}
-                    syncEvent={lastEvent?.type === "PARTICIPANTS" ? null : lastEvent}
+                    syncEvent={lastEvent?.type === "PARTICIPANTS"
+                      || lastEvent?.type === "SCREEN_SHARE" ? null : lastEvent}
                     onControl={sendControl}
                     clientId={clientId}
                     isHost={room.isHost}
+                  />
+
+                  <ScreenShareStage
+                    roomId={roomId}
+                    activeClientId={room.screenSharerClientId}
+                    activeDisplayName={room.screenSharerName}
                   />
 
                   {!room.hasFile && googleActions && (

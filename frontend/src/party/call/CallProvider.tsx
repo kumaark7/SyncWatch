@@ -24,6 +24,11 @@ import {
 } from "./callDevices";
 import { requestCallToken } from "./livekitApi";
 import {
+  claimScreenShare,
+  releaseScreenShare,
+  setGuestScreenSharing
+} from "./screenShareApi";
+import {
   createAudioCaptureOptions,
   createVideoCaptureOptions,
   getSupportedAudioProcessing,
@@ -47,10 +52,16 @@ type CallContextValue = {
   supportedAudioProcessing: Readonly<Record<AudioProcessingSetting, boolean>>;
   adaptiveStreamEnabled: true;
   adaptiveStreamRuntimeConfigurable: false;
+  isScreenSharing: boolean;
+  guestScreenSharingAllowed: boolean;
+  screenShareBlocked: boolean;
+  canManageGuestScreenSharing: boolean;
   joinCall: () => Promise<void>;
   leaveCall: () => Promise<void>;
   setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
   setCameraEnabled: (enabled: boolean) => Promise<void>;
+  toggleScreenShare: () => Promise<void>;
+  setGuestScreenSharingAllowed: (allowed: boolean) => Promise<void>;
   setAudioProcessing: (
     setting: AudioProcessingSetting,
     enabled: boolean
@@ -80,6 +91,15 @@ type Props = {
   clientId: string;
   onCallJoined?: () => void;
   onCallLeft?: () => void;
+  isHost: boolean;
+  isGuest: boolean;
+  guestScreenSharingAllowed: boolean;
+  screenSharerClientId: string | null;
+  authenticatedFetch: (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ) => Promise<Response>;
+  onScreenShareStarted: () => void;
   children: ReactNode;
 };
 
@@ -88,6 +108,12 @@ export default function CallProvider({
   clientId,
   onCallJoined,
   onCallLeft,
+  isHost,
+  isGuest,
+  guestScreenSharingAllowed,
+  screenSharerClientId,
+  authenticatedFetch,
+  onScreenShareStarted,
   children
 }: Props) {
   const [qualitySettings, setQualitySettings] = useState(loadCallQualitySettings);
@@ -112,8 +138,19 @@ export default function CallProvider({
   const [mutedRemoteParticipantIds, setMutedRemoteParticipantIds] =
     useState<Set<string>>(() => new Set());
   const mutedRemoteParticipantIdsRef = useRef(mutedRemoteParticipantIds);
+  const screenSharerClientIdRef = useRef(screenSharerClientId);
   const [listenersWhoMutedMe, setListenersWhoMutedMe] =
     useState<Map<string, string>>(() => new Map());
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+
+  const releaseScreenShareLease = useCallback((keepalive = false) => {
+    return releaseScreenShare(
+      authenticatedFetch,
+      roomId,
+      clientId,
+      keepalive
+    );
+  }, [authenticatedFetch, clientId, roomId]);
 
   const publishSpeakerMute = useCallback(async (
     participantIdentity: string,
@@ -137,6 +174,18 @@ export default function CallProvider({
   useEffect(() => {
     mutedRemoteParticipantIdsRef.current = mutedRemoteParticipantIds;
   }, [mutedRemoteParticipantIds]);
+
+  useEffect(() => {
+    screenSharerClientIdRef.current = screenSharerClientId;
+    const expectedIdentity = screenSharerClientId
+      ? `syncwatch:${roomId}:${screenSharerClientId}`
+      : null;
+    for (const participant of room.remoteParticipants.values()) {
+      const subscribed = participant.identity === expectedIdentity;
+      participant.getTrackPublication(Track.Source.ScreenShare)?.setSubscribed(subscribed);
+      participant.getTrackPublication(Track.Source.ScreenShareAudio)?.setSubscribed(subscribed);
+    }
+  }, [room, roomId, screenSharerClientId]);
 
   const ensureInputDevice = useCallback(async (
     kind: CallInputDeviceKind,
@@ -192,6 +241,16 @@ export default function CallProvider({
       publication,
       participant
     ) => {
+      if (
+        publication.source === Track.Source.ScreenShare
+        || publication.source === Track.Source.ScreenShareAudio
+      ) {
+        const expectedIdentity = screenSharerClientIdRef.current
+          ? `syncwatch:${roomId}:${screenSharerClientIdRef.current}`
+          : null;
+        publication.setSubscribed(participant.identity === expectedIdentity);
+        return;
+      }
       if (
         publication.source === Track.Source.Microphone &&
         mutedRemoteParticipantIdsRef.current.has(participant.identity)
@@ -271,6 +330,23 @@ export default function CallProvider({
       }
     };
 
+    const handleLocalTrackPublished: RoomEventCallbacks["localTrackPublished"] = (
+      publication
+    ) => {
+      if (publication.source === Track.Source.ScreenShare) {
+        setIsScreenSharing(true);
+      }
+    };
+
+    const handleLocalTrackUnpublished: RoomEventCallbacks["localTrackUnpublished"] = (
+      publication
+    ) => {
+      if (publication.source === Track.Source.ScreenShare) {
+        setIsScreenSharing(false);
+        void releaseScreenShareLease().catch(() => undefined);
+      }
+    };
+
     const handleConnectionState = (state: ConnectionState) => {
       if (state === ConnectionState.Connected) {
         setStatus("connected");
@@ -280,6 +356,10 @@ export default function CallProvider({
         setStatus("connecting");
       } else {
         setStatus("idle");
+        if (room.localParticipant.isScreenShareEnabled) {
+          setIsScreenSharing(false);
+          void releaseScreenShareLease(true).catch(() => undefined);
+        }
       }
       updateParticipantCount();
     };
@@ -289,6 +369,8 @@ export default function CallProvider({
     room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
     room.on(RoomEvent.TrackPublished, handleTrackPublished);
     room.on(RoomEvent.DataReceived, handleDataReceived);
+    room.on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
+    room.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
 
     return () => {
       room.off(RoomEvent.ConnectionStateChanged, handleConnectionState);
@@ -296,9 +378,14 @@ export default function CallProvider({
       room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
       room.off(RoomEvent.TrackPublished, handleTrackPublished);
       room.off(RoomEvent.DataReceived, handleDataReceived);
+      room.off(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
+      room.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
+      if (room.localParticipant.isScreenShareEnabled) {
+        void releaseScreenShareLease(true).catch(() => undefined);
+      }
       void room.disconnect(true);
     };
-  }, [publishSpeakerMute, room]);
+  }, [publishSpeakerMute, releaseScreenShareLease, room, roomId]);
 
   useEffect(() => {
     if (room.state !== ConnectionState.Disconnected) {
@@ -309,6 +396,7 @@ export default function CallProvider({
     setError(null);
     setMutedRemoteParticipantIds(new Set());
     setListenersWhoMutedMe(new Map());
+    setIsScreenSharing(false);
   }, [room, roomId, clientId]);
 
   const joinCall = useCallback(async () => {
@@ -393,6 +481,80 @@ export default function CallProvider({
       await room.localParticipant.setCameraEnabled(true, options);
     }
   }, [ensureInputDevice, qualitySettings.videoQuality, room]);
+
+  const stopScreenSharing = useCallback(async () => {
+    setError(null);
+    try {
+      await room.localParticipant.setScreenShareEnabled(false);
+    } finally {
+      setIsScreenSharing(false);
+      await releaseScreenShareLease().catch(() => undefined);
+    }
+  }, [releaseScreenShareLease, room]);
+
+  const toggleScreenShare = useCallback(async () => {
+    if (room.localParticipant.isScreenShareEnabled) {
+      await stopScreenSharing();
+      return;
+    }
+    setError(null);
+    await claimScreenShare(authenticatedFetch, roomId, clientId);
+    try {
+      const publication = await room.localParticipant.setScreenShareEnabled(true, {
+        audio: true,
+        video: true,
+        selfBrowserSurface: "include",
+        surfaceSwitching: "include",
+        systemAudio: "include"
+      });
+      if (!publication) {
+        throw new Error("Screen sharing did not start");
+      }
+      setIsScreenSharing(true);
+      onScreenShareStarted();
+    } catch (cause) {
+      await room.localParticipant.setScreenShareEnabled(false).catch(() => undefined);
+      await releaseScreenShareLease().catch(() => undefined);
+      const message = cause instanceof Error
+        ? cause.message
+        : "Screen sharing permission was not available";
+      setError(message);
+      throw cause;
+    }
+  }, [
+    authenticatedFetch,
+    clientId,
+    onScreenShareStarted,
+    releaseScreenShareLease,
+    room,
+    roomId,
+    stopScreenSharing
+  ]);
+
+  const updateGuestScreenSharing = useCallback(async (allowed: boolean) => {
+    setError(null);
+    try {
+      await setGuestScreenSharing(
+        authenticatedFetch,
+        roomId,
+        clientId,
+        allowed
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Screen sharing access could not be updated");
+    }
+  }, [authenticatedFetch, clientId, roomId]);
+
+  useEffect(() => {
+    if (
+      isGuest
+      && !isHost
+      && !guestScreenSharingAllowed
+      && room.localParticipant.isScreenShareEnabled
+    ) {
+      void stopScreenSharing();
+    }
+  }, [guestScreenSharingAllowed, isGuest, isHost, room, stopScreenSharing]);
 
   const setAudioProcessing = useCallback(async (
     setting: AudioProcessingSetting,
@@ -479,6 +641,9 @@ export default function CallProvider({
     const wasJoined = room.state === ConnectionState.Connected
       || room.state === ConnectionState.Reconnecting;
     setError(null);
+    if (room.localParticipant.isScreenShareEnabled) {
+      await stopScreenSharing().catch(() => undefined);
+    }
     await room.localParticipant.setCameraEnabled(false).catch(() => undefined);
     await room.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
     await room.disconnect(true);
@@ -489,7 +654,7 @@ export default function CallProvider({
     if (wasJoined) {
       onCallLeft?.();
     }
-  }, [onCallLeft, room]);
+  }, [onCallLeft, room, stopScreenSharing]);
 
   const toggleRemoteAudio = useCallback(async (participantIdentity: string) => {
     const participant = room.remoteParticipants.get(participantIdentity);
@@ -540,10 +705,16 @@ export default function CallProvider({
     supportedAudioProcessing,
     adaptiveStreamEnabled: true,
     adaptiveStreamRuntimeConfigurable: false,
+    isScreenSharing,
+    guestScreenSharingAllowed,
+    screenShareBlocked: isGuest && !isHost && !guestScreenSharingAllowed,
+    canManageGuestScreenSharing: isHost,
     joinCall,
     leaveCall,
     setMicrophoneEnabled,
     setCameraEnabled,
+    toggleScreenShare,
+    setGuestScreenSharingAllowed: updateGuestScreenSharing,
     setAudioProcessing,
     setVideoQuality,
     switchInputDevice,
@@ -551,6 +722,10 @@ export default function CallProvider({
     clearError: () => setError(null)
   }), [
     error,
+    guestScreenSharingAllowed,
+    isGuest,
+    isHost,
+    isScreenSharing,
     joinCall,
     leaveCall,
     listenersWhoMutedMe,
@@ -564,7 +739,9 @@ export default function CallProvider({
     status,
     supportedAudioProcessing,
     switchInputDevice,
-    toggleRemoteAudio
+    toggleScreenShare,
+    toggleRemoteAudio,
+    updateGuestScreenSharing
   ]);
 
   return (

@@ -48,7 +48,12 @@ public class LiveKitTokenService {
                 new RoomJoin(true),
                 new RoomName(liveKitRoomName),
                 new CanPublish(true),
-                new CanPublishSources(List.of("camera", "microphone")),
+                new CanPublishSources(List.of(
+                        "camera",
+                        "microphone",
+                        "screen_share",
+                        "screen_share_audio"
+                )),
                 new CanSubscribe(true),
                 new CanPublishData(true)
         );

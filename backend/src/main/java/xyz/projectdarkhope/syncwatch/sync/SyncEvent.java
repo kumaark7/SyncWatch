@@ -14,7 +14,10 @@ public record SyncEvent(
         String senderClientId,
         String hostClientId,
         Long seekId,
-        List<RoomParticipant> participants
+        List<RoomParticipant> participants,
+        String screenSharerClientId,
+        String screenSharerName,
+        boolean guestScreenSharingAllowed
 ) {
     public static SyncEvent state(Room room) {
         return new SyncEvent(
@@ -26,7 +29,10 @@ public record SyncEvent(
                 null,
                 room.getHostClientId(),
                 room.getSeekVersion(),
-                null
+                null,
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
 
@@ -40,7 +46,10 @@ public record SyncEvent(
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
-                null
+                null,
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
 
@@ -54,7 +63,10 @@ public record SyncEvent(
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
-                null
+                null,
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
 
@@ -68,7 +80,10 @@ public record SyncEvent(
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
-                null
+                null,
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
 
@@ -82,7 +97,10 @@ public record SyncEvent(
                 null,
                 room.getHostClientId(),
                 room.getSeekVersion(),
-                room.getParticipants()
+                room.getParticipants(),
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
 
@@ -96,7 +114,28 @@ public record SyncEvent(
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
-                null
+                null,
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
+
+    public static SyncEvent screenShare(Room room, String senderClientId) {
+        return new SyncEvent(
+                "SCREEN_SHARE",
+                room.getCurrentTime(),
+                room.isPlaying(),
+                room.getFileName(),
+                System.currentTimeMillis(),
+                senderClientId,
+                room.getHostClientId(),
+                room.getSeekVersion(),
+                null,
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
+        );
+    }
+
 }

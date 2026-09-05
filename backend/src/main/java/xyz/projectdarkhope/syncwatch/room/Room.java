@@ -22,6 +22,8 @@ public class Room {
     private volatile long accessTokenExpiresAt;
     private volatile String driveOwnerUserId;
     private volatile String hostClientId;
+    private volatile String screenSharerClientId;
+    private volatile boolean guestScreenSharingAllowed = true;
     private volatile boolean playing;
     private volatile double currentTime;
     private volatile long updatedAt;
@@ -46,6 +48,8 @@ public class Room {
     public long getAccessTokenExpiresAt() { return accessTokenExpiresAt; }
     public String getDriveOwnerUserId() { return driveOwnerUserId; }
     public String getHostClientId() { return hostClientId; }
+    public String getScreenSharerClientId() { return screenSharerClientId; }
+    public boolean isGuestScreenSharingAllowed() { return guestScreenSharingAllowed; }
     public boolean isPlaying() { return playing; }
     public long getSeekVersion() { return seekVersion; }
     public boolean hasFile() { return fileId != null && !fileId.isBlank(); }
@@ -93,6 +97,53 @@ public class Room {
 
     public synchronized boolean hasParticipants() {
         return !participantNames.isEmpty();
+    }
+
+    public synchronized boolean canStartScreenShare(String clientId) {
+        if (!hasParticipant(clientId)) {
+            return false;
+        }
+        String ownerId = participantUserIds.get(clientId);
+        return ownerId != null && (
+                isHost(clientId)
+                        || !ownerId.startsWith("guest:")
+                        || guestScreenSharingAllowed
+        );
+    }
+
+    public synchronized boolean startScreenShare(String clientId) {
+        if (!canStartScreenShare(clientId)
+                || (screenSharerClientId != null && !screenSharerClientId.equals(clientId))) {
+            return false;
+        }
+        screenSharerClientId = clientId;
+        return true;
+    }
+
+    public synchronized boolean stopScreenShare(String clientId) {
+        if (clientId == null || !clientId.equals(screenSharerClientId)) {
+            return false;
+        }
+        screenSharerClientId = null;
+        return true;
+    }
+
+    public synchronized String setGuestScreenSharingAllowed(boolean allowed) {
+        guestScreenSharingAllowed = allowed;
+        if (allowed || screenSharerClientId == null || isHost(screenSharerClientId)) {
+            return null;
+        }
+        String ownerId = participantUserIds.get(screenSharerClientId);
+        if (ownerId == null || !ownerId.startsWith("guest:")) {
+            return null;
+        }
+        String stoppedClientId = screenSharerClientId;
+        screenSharerClientId = null;
+        return stoppedClientId;
+    }
+
+    public synchronized boolean clearScreenShare(String clientId) {
+        return stopScreenShare(clientId);
     }
 
     public synchronized void resetPlayback() {
@@ -179,6 +230,7 @@ public class Room {
             if (entry.getValue().isEmpty()) {
                 String clientId = entry.getKey();
                 String nameTag = participantNames.get(clientId);
+                clearScreenShare(clientId);
                 sessionsByClientId.remove(entry.getKey());
                 participantNames.remove(entry.getKey());
                 participantUserIds.remove(entry.getKey());
@@ -197,6 +249,7 @@ public class Room {
         }
 
         String nameTag = participantNames.remove(clientId);
+        clearScreenShare(clientId);
         participantUserIds.remove(clientId);
         sessionsByClientId.remove(clientId);
         if (nameTag == null) {

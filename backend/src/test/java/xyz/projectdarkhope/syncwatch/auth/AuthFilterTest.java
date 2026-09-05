@@ -57,11 +57,31 @@ class AuthFilterTest {
         MockHttpServletResponse roomFileResponse = new MockHttpServletResponse();
         filter.doFilter(roomFile, roomFileResponse, new MockFilterChain());
 
+        MockHttpServletRequest screenShare = guestRequest(
+                "POST",
+                "/api/rooms/ABC123/screen-share/start"
+        );
+        MockHttpServletResponse screenShareResponse = new MockHttpServletResponse();
+        filter.doFilter(screenShare, screenShareResponse, new MockFilterChain());
+
+        MockHttpServletRequest otherRoomScreenShare = guestRequest(
+                "POST",
+                "/api/rooms/OTHER1/screen-share/start"
+        );
+        MockHttpServletResponse otherRoomScreenShareResponse = new MockHttpServletResponse();
+        filter.doFilter(
+                otherRoomScreenShare,
+                otherRoomScreenShareResponse,
+                new MockFilterChain()
+        );
+
         assertThat(allowedResponse.getStatus()).isEqualTo(200);
         assertThat(otherRoomResponse.getStatus()).isEqualTo(401);
         assertThat(createRoomResponse.getStatus()).isEqualTo(401);
         assertThat(googleResponse.getStatus()).isEqualTo(200);
         assertThat(roomFileResponse.getStatus()).isEqualTo(200);
+        assertThat(screenShareResponse.getStatus()).isEqualTo(200);
+        assertThat(otherRoomScreenShareResponse.getStatus()).isEqualTo(401);
     }
 
     private MockHttpServletRequest guestRequest(String method, String path) {

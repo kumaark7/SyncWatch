@@ -9,7 +9,10 @@ public record RoomResponse(
         double currentTime,
         long serverTime,
         boolean hostAssigned,
-        boolean isHost
+        boolean isHost,
+        String screenSharerClientId,
+        String screenSharerName,
+        boolean guestScreenSharingAllowed
 ) {
     public static RoomResponse from(Room room, String clientId) {
         return new RoomResponse(
@@ -21,7 +24,10 @@ public record RoomResponse(
                 room.getCurrentTime(),
                 System.currentTimeMillis(),
                 room.hasHost(),
-                room.isHost(clientId)
+                room.isHost(clientId),
+                room.getScreenSharerClientId(),
+                room.getParticipantName(room.getScreenSharerClientId()),
+                room.isGuestScreenSharingAllowed()
         );
     }
 }
