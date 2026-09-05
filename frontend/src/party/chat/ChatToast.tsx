@@ -124,6 +124,7 @@ export default function ChatToastStack({
   useEffect(() => {
     if (!message
         || (message.type !== "USER"
+          && message.type !== "SYSTEM_HOST_TRANSFER"
           && message.type !== "SYSTEM_CALL_JOIN"
           && message.type !== "SYSTEM_CALL_LEAVE")
         || message.senderId === clientId

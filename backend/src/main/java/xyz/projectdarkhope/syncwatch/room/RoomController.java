@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import jakarta.servlet.http.HttpServletRequest;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
+import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.google.GoogleOAuthException;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
@@ -21,17 +23,20 @@ public class RoomController {
     private final SimpMessagingTemplate messaging;
     private final GoogleDriveOAuthService googleOAuth;
     private final AuthService authService;
+    private final ChatService chatService;
 
     public RoomController(
             RoomStore rooms,
             SimpMessagingTemplate messaging,
             GoogleDriveOAuthService googleOAuth,
-            AuthService authService
+            AuthService authService,
+            ChatService chatService
     ) {
         this.rooms = rooms;
         this.messaging = messaging;
         this.googleOAuth = googleOAuth;
         this.authService = authService;
+        this.chatService = chatService;
     }
 
     @GetMapping("/health")
@@ -124,6 +129,17 @@ public class RoomController {
                     "/topic/room/" + room.getId(),
                     SyncEvent.participants(room)
             );
+            ChatMessage hostMessage = chatService.createHostTransferMessage(
+                    room,
+                    request.targetClientId(),
+                    room.getParticipantName(request.targetClientId())
+            );
+            if (hostMessage != null) {
+                messaging.convertAndSend(
+                        "/topic/rooms/" + room.getId() + "/chat",
+                        hostMessage
+                );
+            }
             return ResponseEntity.ok(RoomResponse.from(room, request.currentHostClientId()));
         }).orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -141,16 +157,12 @@ public class RoomController {
             );
         }
 
-        String userId = currentUserId(browserRequest);
-        if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
-        }
-
         Room room = rooms.find(roomId).orElse(null);
         if (room == null) {
             return ResponseEntity.notFound().build();
         }
-        if (!room.isHostOwnedBy(request.clientId(), userId)) {
+        String ownerId = currentParticipantOwnerId(browserRequest, room, request.clientId());
+        if (ownerId == null || !room.isHostOwnedBy(request.clientId(), ownerId)) {
             return ResponseEntity.status(403).body(
                     Map.of("error", "Only the room host can change the Drive file")
             );
@@ -158,7 +170,7 @@ public class RoomController {
 
         GoogleDriveOAuthService.Credentials credentials;
         try {
-            credentials = googleOAuth.refreshConnection(userId);
+            credentials = googleOAuth.refreshConnection(ownerId);
         } catch (GoogleOAuthException error) {
             return ResponseEntity.status(401).body(Map.of("error", error.getMessage()));
         }
@@ -169,7 +181,7 @@ public class RoomController {
                         ? "Google Drive video"
                         : request.fileName()
         );
-        room.setDriveCredentials(userId, credentials.accessToken(), credentials.expiresAt());
+        room.setDriveCredentials(ownerId, credentials.accessToken(), credentials.expiresAt());
         room.resetPlayback();
 
         messaging.convertAndSend(
@@ -192,16 +204,12 @@ public class RoomController {
             );
         }
 
-        String userId = currentUserId(browserRequest);
-        if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
-        }
-
         Room room = rooms.find(roomId).orElse(null);
         if (room == null) {
             return ResponseEntity.notFound().build();
         }
-        if (!room.isHostOwnedBy(request.clientId(), userId)) {
+        String ownerId = currentParticipantOwnerId(browserRequest, room, request.clientId());
+        if (ownerId == null || !room.isHostOwnedBy(request.clientId(), ownerId)) {
             return ResponseEntity.status(403).body(
                     Map.of("error", "Only the room host can refresh Drive access")
             );
@@ -212,7 +220,7 @@ public class RoomController {
                     Map.of("error", "No Drive file is selected")
             );
         }
-        if (!userId.equals(room.getDriveOwnerUserId())) {
+        if (!ownerId.equals(room.getDriveOwnerUserId())) {
             return ResponseEntity.status(403).body(
                     Map.of("error", "The selected Drive file belongs to another SyncWatch user")
             );
@@ -220,12 +228,12 @@ public class RoomController {
 
         GoogleDriveOAuthService.Credentials credentials;
         try {
-            credentials = googleOAuth.refreshConnection(userId);
+            credentials = googleOAuth.refreshConnection(ownerId);
         } catch (GoogleOAuthException error) {
             return ResponseEntity.status(401).body(Map.of("error", error.getMessage()));
         }
 
-        room.setDriveCredentials(userId, credentials.accessToken(), credentials.expiresAt());
+        room.setDriveCredentials(ownerId, credentials.accessToken(), credentials.expiresAt());
         return ResponseEntity.noContent().build();
     }
 
@@ -241,13 +249,9 @@ public class RoomController {
             );
         }
 
-        String userId = currentUserId(browserRequest);
-        if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
-        }
-
         return rooms.find(roomId).<ResponseEntity<?>>map(room -> {
-            if (!room.isHostOwnedBy(clientId, userId)) {
+            String ownerId = currentParticipantOwnerId(browserRequest, room, clientId);
+            if (ownerId == null || !room.isHostOwnedBy(clientId, ownerId)) {
                 return ResponseEntity.status(403).body(
                         Map.of("error", "Only the room host can disconnect Google Drive")
                 );
@@ -268,5 +272,17 @@ public class RoomController {
 
     private String currentUserId(HttpServletRequest request) {
         return authService.sessionUserId(request.getSession(false)).orElse(null);
+    }
+
+    private String currentParticipantOwnerId(
+            HttpServletRequest request,
+            Room room,
+            String clientId
+    ) {
+        return authService.participantOwnerId(
+                request.getSession(false),
+                room.getId(),
+                clientId
+        ).orElse(null);
     }
 }

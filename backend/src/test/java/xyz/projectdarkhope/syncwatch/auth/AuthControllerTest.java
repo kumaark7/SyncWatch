@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -17,7 +18,8 @@ import static org.mockito.Mockito.when;
 class AuthControllerTest {
     private final AuthService auth = mock(AuthService.class);
     private final RememberMeService rememberMe = mock(RememberMeService.class);
-    private final AuthController controller = new AuthController(auth, rememberMe);
+    private final GoogleDriveOAuthService googleOAuth = mock(GoogleDriveOAuthService.class);
+    private final AuthController controller = new AuthController(auth, rememberMe, googleOAuth);
     private final UserAccount user = new UserAccount(
             "3d5d6b1a-7aa0-49d0-9b08-16a277179d20",
             "Kishore",
@@ -76,6 +78,21 @@ class AuthControllerTest {
         assertThat(restored.userId()).isEqualTo(user.id());
         assertThat(request.getSession(false).getAttribute(AuthService.SESSION_USER_ID))
                 .isEqualTo(user.id());
+    }
+
+    @Test
+    void guestLogoutForgetsTemporaryDriveConnection() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        request.getSession(true).setAttribute(
+                AuthService.SESSION_GUEST_ID,
+                "guest:temporary-owner"
+        );
+
+        assertThat(controller.logout(request, response).authenticated()).isFalse();
+
+        verify(googleOAuth).forgetTemporaryConnection("guest:temporary-owner");
+        assertThat(request.getSession(false)).isNull();
     }
 
     @Test

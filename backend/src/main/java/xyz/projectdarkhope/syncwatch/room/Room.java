@@ -225,6 +225,14 @@ public class Room {
         return clientId == null ? null : participantNames.get(clientId);
     }
 
+    public synchronized String getParticipantOwnerId(String clientId) {
+        return clientId == null ? null : participantUserIds.get(clientId);
+    }
+
+    public synchronized List<String> getParticipantOwnerIds() {
+        return participantUserIds.values().stream().distinct().toList();
+    }
+
     public synchronized String getClientIdForSession(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return null;

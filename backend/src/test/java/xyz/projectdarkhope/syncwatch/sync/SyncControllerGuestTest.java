@@ -5,6 +5,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.TaskScheduler;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
 
@@ -26,6 +27,7 @@ class SyncControllerGuestTest {
                 rooms,
                 messaging,
                 chat,
+                mock(GoogleDriveOAuthService.class),
                 mock(TaskScheduler.class),
                 Duration.ofSeconds(5)
         );

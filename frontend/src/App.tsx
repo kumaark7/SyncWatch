@@ -324,6 +324,7 @@ function AuthenticatedApp({
   useEffect(() => {
     if (!lastChatMessage
         || (lastChatMessage.type !== "USER"
+          && lastChatMessage.type !== "SYSTEM_HOST_TRANSFER"
           && lastChatMessage.type !== "SYSTEM_CALL_JOIN"
           && lastChatMessage.type !== "SYSTEM_CALL_LEAVE")
         || lastChatMessage.senderId === clientId
@@ -490,13 +491,6 @@ function AuthenticatedApp({
   }, [lastEvent, clientId]);
 
   useEffect(() => {
-    if (room && !room.isHost) {
-      setGoogleConnection(null);
-      googleRestoreAttemptedRef.current = false;
-    }
-  }, [room]);
-
-  useEffect(() => {
     if (room?.roomId !== roomId || !joinedNameTag) {
       return;
     }
@@ -587,6 +581,13 @@ function AuthenticatedApp({
     return Boolean(room?.isHost) && await confirmAuthenticatedSession();
   }
 
+  async function confirmDriveSession() {
+    if (guestSession && !room?.isHost) {
+      return false;
+    }
+    return confirmAuthenticatedSession();
+  }
+
   function requestGoogleAuthorizationCode() {
     return new Promise<GoogleConnection | null>((resolve) => {
       if (!CLIENT_ID) {
@@ -664,7 +665,7 @@ function AuthenticatedApp({
 
   async function restoreGoogleDriveConnection() {
     try {
-      if (!await confirmHostSession()) {
+      if (!await confirmDriveSession()) {
         return null;
       }
 
@@ -761,7 +762,7 @@ function AuthenticatedApp({
 
   useEffect(() => {
     if (
-      !room?.isHost
+      (!room || (guestSession && !room.isHost))
       || googleConnection
       || googleRestoreAttemptedRef.current
     ) {
@@ -777,7 +778,7 @@ function AuthenticatedApp({
         return;
       }
 
-      if (room.hasFile) {
+      if (room.isHost && room.hasFile) {
         const updated = await updateRoomDriveToken();
         if (!updated || cancelled) {
           return;
@@ -794,7 +795,7 @@ function AuthenticatedApp({
     return () => {
       cancelled = true;
     };
-  }, [googleConnection, room?.hasFile, room?.isHost, roomId]);
+  }, [googleConnection, guestSession, room?.hasFile, room?.isHost, roomId]);
 
   async function selectFile(file: {
     id: string;
@@ -1030,7 +1031,7 @@ function AuthenticatedApp({
     }
   }
 
-  const canManageGoogle = Boolean(room?.isHost && !guestSession);
+  const canManageGoogle = Boolean(room?.isHost);
   const googleActions = canManageGoogle ? (
     !googleConnection ? (
       <button

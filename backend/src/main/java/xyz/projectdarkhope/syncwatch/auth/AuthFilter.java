@@ -65,6 +65,12 @@ public class AuthFilter extends OncePerRequestFilter {
                 && path.equals("/api/stream/" + roomId)) {
             return true;
         }
+        if (path.equals("/api/google/connection")) {
+            return "GET".equals(method) || "DELETE".equals(method);
+        }
+        if (path.equals("/api/google/code")) {
+            return "POST".equals(method);
+        }
 
         String roomPath = "/api/rooms/" + roomId;
         if ("GET".equals(method)) {
@@ -72,6 +78,12 @@ public class AuthFilter extends OncePerRequestFilter {
                     || path.equals(roomPath + "/chat")
                     || path.equals(roomPath + "/call/token");
         }
-        return "POST".equals(method) && path.equals(roomPath + "/leave");
+        if ("POST".equals(method)) {
+            return path.equals(roomPath + "/leave") || path.equals(roomPath + "/file");
+        }
+        if ("PUT".equals(method)) {
+            return path.equals(roomPath + "/drive-token");
+        }
+        return "DELETE".equals(method) && path.equals(roomPath + "/file");
     }
 }

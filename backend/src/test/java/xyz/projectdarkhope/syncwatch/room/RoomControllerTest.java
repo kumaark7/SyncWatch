@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
+import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
 
@@ -24,11 +26,13 @@ class RoomControllerTest {
     private final SimpMessagingTemplate messaging = mock(SimpMessagingTemplate.class);
     private final GoogleDriveOAuthService googleOAuth = mock(GoogleDriveOAuthService.class);
     private final AuthService auth = mock(AuthService.class);
+    private final ChatService chatService = new ChatService();
     private final RoomController controller = new RoomController(
             rooms,
             messaging,
             googleOAuth,
-            auth
+            auth,
+            chatService
     );
 
     @Test
@@ -64,6 +68,12 @@ class RoomControllerTest {
         verify(messaging).convertAndSend(eq("/topic/room/" + room.getId()), event.capture());
         assertThat(event.getValue().type()).isEqualTo("PARTICIPANTS");
         assertThat(event.getValue().hostClientId()).isEqualTo("guest");
+        assertThat(chatService.history(room.getId()))
+                .singleElement()
+                .satisfies(message -> {
+                    assertThat(message.type()).isEqualTo(ChatMessageType.SYSTEM_HOST_TRANSFER);
+                    assertThat(message.text()).isEqualTo("Guest is now the Host");
+                });
     }
 
     @Test
@@ -130,6 +140,8 @@ class RoomControllerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.getSession(true);
         when(auth.sessionUserId(any())).thenReturn(Optional.of("user-a"));
+        when(auth.participantOwnerId(any(), eq(room.getId()), eq("host")))
+                .thenReturn(Optional.of("user-a"));
         when(googleOAuth.refreshConnection("user-a")).thenReturn(
                 new GoogleDriveOAuthService.Credentials("access-a", 1234, "refresh-a")
         );
@@ -144,6 +156,30 @@ class RoomControllerTest {
         assertThat(room.getDriveOwnerUserId()).isEqualTo("user-a");
         assertThat(room.getAccessToken()).isEqualTo("access-a");
         verify(googleOAuth).refreshConnection("user-a");
+    }
+
+    @Test
+    void guestHostCanSelectFileUsingOnlyTheirTemporaryConnection() {
+        Room room = rooms.create("Test Room");
+        room.claimHost("guest-client", "guest:owner");
+        room.registerParticipant("guest-client", "guest:owner", "Guest", "session-1");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession(true);
+        when(auth.participantOwnerId(any(), eq(room.getId()), eq("guest-client")))
+                .thenReturn(Optional.of("guest:owner"));
+        when(googleOAuth.refreshConnection("guest:owner")).thenReturn(
+                new GoogleDriveOAuthService.Credentials("guest-access", 1234, "guest-refresh")
+        );
+
+        ResponseEntity<?> response = controller.selectFile(
+                room.getId(),
+                new FileSelectionRequest("drive-file", "Guest Movie", "guest-client"),
+                request
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(room.getDriveOwnerUserId()).isEqualTo("guest:owner");
+        assertThat(room.getAccessToken()).isEqualTo("guest-access");
     }
 
     private MockHttpServletRequest requestFor(String userId) {

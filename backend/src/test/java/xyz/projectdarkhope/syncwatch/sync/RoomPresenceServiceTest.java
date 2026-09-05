@@ -8,6 +8,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
 
@@ -30,6 +31,7 @@ class RoomPresenceServiceTest {
     private ChatService chatService;
     private RoomStore rooms;
     private RoomPresenceService presence;
+    private GoogleDriveOAuthService googleOAuth;
 
     @BeforeEach
     void setUp() {
@@ -39,10 +41,12 @@ class RoomPresenceServiceTest {
         messaging = mock(SimpMessagingTemplate.class);
         chatService = new ChatService();
         rooms = new RoomStore();
+        googleOAuth = mock(GoogleDriveOAuthService.class);
         presence = new RoomPresenceService(
                 rooms,
                 messaging,
                 chatService,
+                googleOAuth,
                 scheduler,
                 Duration.ofMillis(80)
         );
@@ -148,6 +152,10 @@ class RoomPresenceServiceTest {
         assertThat(room.hasParticipant("host-client")).isFalse();
         assertThat(room.isHost("oldest-client")).isTrue();
         assertThat(room.isHost("newer-client")).isFalse();
+        assertThat(chatService.history(room.getId())).anySatisfy(message -> {
+            assertThat(message.type()).isEqualTo(ChatMessageType.SYSTEM_HOST_TRANSFER);
+            assertThat(message.text()).isEqualTo("Zulu is now the Host");
+        });
         verify(messaging).convertAndSend(
                 eq("/topic/room/" + room.getId()),
                 argThat((SyncEvent event) -> "PARTICIPANTS".equals(event.type())
@@ -162,6 +170,31 @@ class RoomPresenceServiceTest {
         );
         assertThat(rejoin.participant().host()).isFalse();
         assertThat(room.isHost("oldest-client")).isTrue();
+    }
+
+    @Test
+    void guestDepartureClearsTemporaryDriveCredentialsAndRoomFile() {
+        Room room = rooms.create("Test room");
+        room.claimHost("guest-client", "guest:owner");
+        presence.registerParticipant(
+                room, "guest-client", "guest:owner", "Guest", "guest-session"
+        );
+        register(room, "next-client", "Next Host", "next-session");
+        room.setFileId("guest-file");
+        room.setFileName("Guest Movie");
+        room.setDriveCredentials(
+                "guest:owner", "guest-access", System.currentTimeMillis() + 60_000
+        );
+
+        assertThat(presence.leaveImmediately(room.getId(), "guest:owner", "guest-client"))
+                .isEqualTo(RoomPresenceService.LeaveRoomResult.LEFT);
+
+        assertThat(room.hasFile()).isFalse();
+        verify(googleOAuth).forgetTemporaryConnection("guest:owner");
+        verify(messaging).convertAndSend(
+                eq("/topic/room/" + room.getId()),
+                argThat((SyncEvent event) -> "FILE_CLEARED".equals(event.type()))
+        );
     }
 
     @Test
@@ -268,6 +301,7 @@ class RoomPresenceServiceTest {
         rooms,
         messaging,
         chatService,
+        googleOAuth,
         scheduler,
         Duration.ofSeconds(2)
         );

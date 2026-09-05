@@ -3,7 +3,7 @@ export type ChatMessage = {
   roomId: string;
   senderId: string;
   senderName: string;
-  type: "USER" | "SYSTEM_JOIN" | "SYSTEM_LEAVE" | "SYSTEM_CALL_JOIN" | "SYSTEM_CALL_LEAVE";
+  type: "USER" | "SYSTEM_JOIN" | "SYSTEM_LEAVE" | "SYSTEM_HOST_TRANSFER" | "SYSTEM_CALL_JOIN" | "SYSTEM_CALL_LEAVE";
   text: string;
   timestamp: number;
 };

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 
 import java.util.Map;
 
@@ -17,10 +18,16 @@ import java.util.Map;
 public class AuthController {
     private final AuthService authService;
     private final RememberMeService rememberMe;
+    private final GoogleDriveOAuthService googleOAuth;
 
-    public AuthController(AuthService authService, RememberMeService rememberMe) {
+    public AuthController(
+            AuthService authService,
+            RememberMeService rememberMe,
+            GoogleDriveOAuthService googleOAuth
+    ) {
         this.authService = authService;
         this.rememberMe = rememberMe;
+        this.googleOAuth = googleOAuth;
     }
 
     @GetMapping("/session")
@@ -97,6 +104,9 @@ public class AuthController {
         rememberMe.revoke(request, response);
         HttpSession session = request.getSession(false);
         if (session != null) {
+            if (session.getAttribute(AuthService.SESSION_GUEST_ID) instanceof String guestId) {
+                googleOAuth.forgetTemporaryConnection(guestId);
+            }
             session.invalidate();
         }
         return AuthSessionResponse.signedOut();

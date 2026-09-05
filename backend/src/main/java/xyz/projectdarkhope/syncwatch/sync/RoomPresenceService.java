@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
+import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomParticipant;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
@@ -52,6 +53,7 @@ public class RoomPresenceService {
     private final ChatService chatService;
     private final TaskScheduler scheduler;
     private final Duration gracePeriod;
+    private final GoogleDriveOAuthService googleOAuth;
     private final Object pendingLock = new Object();
     private final Map<PresenceKey, PendingDeparture> pendingDepartures = new HashMap<>();
 
@@ -59,12 +61,14 @@ public class RoomPresenceService {
             RoomStore rooms,
             SimpMessagingTemplate messaging,
             ChatService chatService,
+            GoogleDriveOAuthService googleOAuth,
             @Qualifier("webSocketTaskScheduler") TaskScheduler scheduler,
             @Value("${syncwatch.websocket.presence-grace:5s}") Duration gracePeriod
     ) {
         this.rooms = rooms;
         this.messaging = messaging;
         this.chatService = chatService;
+        this.googleOAuth = googleOAuth;
         this.scheduler = scheduler;
         this.gracePeriod = gracePeriod;
     }
@@ -160,6 +164,7 @@ public class RoomPresenceService {
             }
 
             completeDepartures(room, List.of(departure), "deliberate room leave");
+            cleanupTemporaryDrive(room, userId);
             return LeaveRoomResult.LEFT;
         }
     }
@@ -171,6 +176,7 @@ public class RoomPresenceService {
         }
 
         synchronized (pendingLock) {
+            List<String> participantOwnerIds = room.getParticipantOwnerIds();
             synchronized (room) {
                 if (!room.isHostOwnedBy(clientId, userId)) {
                     return CloseRoomResult.FORBIDDEN;
@@ -189,6 +195,7 @@ public class RoomPresenceService {
                 }
                 return true;
             });
+            participantOwnerIds.forEach(googleOAuth::forgetTemporaryConnection);
         }
 
         messaging.convertAndSend(
@@ -214,6 +221,7 @@ public class RoomPresenceService {
                 return;
             }
             List<RoomParticipant> departures = new ArrayList<>();
+            String participantOwnerId = room.getParticipantOwnerId(key.clientId());
             for (String sessionId : pending.sessionIds) {
                 departures.addAll(room.removeSession(sessionId));
             }
@@ -224,6 +232,7 @@ public class RoomPresenceService {
 
             log.info("Presence grace period expired for room {}", room.getId());
             completeDepartures(room, departures, "reconnect grace expiration");
+            cleanupTemporaryDrive(room, participantOwnerId);
         }
     }
 
@@ -243,6 +252,17 @@ public class RoomPresenceService {
             );
             if (previousHostClientId != null
                     && !previousHostClientId.equals(currentHostClientId)) {
+                ChatMessage hostMessage = chatService.createHostTransferMessage(
+                        room,
+                        currentHostClientId,
+                        room.getParticipantName(currentHostClientId)
+                );
+                if (hostMessage != null) {
+                    messaging.convertAndSend(
+                            "/topic/rooms/" + room.getId() + "/chat",
+                            hostMessage
+                    );
+                }
                 log.info("Room {} transferred host after {}", room.getId(), reason);
             }
         }
@@ -279,5 +299,22 @@ public class RoomPresenceService {
                 "/topic/rooms/" + room.getId() + "/chat",
                 leaveMessage
         );
+    }
+
+    private void cleanupTemporaryDrive(Room room, String ownerId) {
+        if (ownerId == null || !ownerId.startsWith("guest:")) {
+            return;
+        }
+        googleOAuth.forgetTemporaryConnection(ownerId);
+        if (!ownerId.equals(room.getDriveOwnerUserId())) {
+            return;
+        }
+        room.clearFile();
+        if (rooms.find(room.getId()).orElse(null) == room) {
+            messaging.convertAndSend(
+                    "/topic/room/" + room.getId(),
+                    SyncEvent.fileCleared(room, null)
+            );
+        }
     }
 }

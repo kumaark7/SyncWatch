@@ -87,6 +87,27 @@ public class ChatService {
         return message;
     }
 
+    public ChatMessage createHostTransferMessage(
+            Room room,
+            String hostClientId,
+            String hostName
+    ) {
+        if (hostClientId == null || hostName == null || hostName.isBlank()) {
+            return null;
+        }
+        ChatMessage message = new ChatMessage(
+                UUID.randomUUID().toString(),
+                room.getId(),
+                "system:host-transfer",
+                hostName,
+                ChatMessageType.SYSTEM_HOST_TRANSFER,
+                hostName + " is now the Host",
+                System.currentTimeMillis()
+        );
+        append(message);
+        return message;
+    }
+
     public ChatMessage createCallLeaveMessage(Room room, String senderId, String senderName) {
         Set<String> participants = callParticipantsByRoom.get(room.getId());
         if (participants == null || !participants.remove(senderId)) {

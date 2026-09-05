@@ -49,9 +49,19 @@ class AuthFilterTest {
         MockHttpServletResponse createRoomResponse = new MockHttpServletResponse();
         filter.doFilter(createRoom, createRoomResponse, new MockFilterChain());
 
+        MockHttpServletRequest google = guestRequest("POST", "/api/google/code");
+        MockHttpServletResponse googleResponse = new MockHttpServletResponse();
+        filter.doFilter(google, googleResponse, new MockFilterChain());
+
+        MockHttpServletRequest roomFile = guestRequest("POST", "/api/rooms/ABC123/file");
+        MockHttpServletResponse roomFileResponse = new MockHttpServletResponse();
+        filter.doFilter(roomFile, roomFileResponse, new MockFilterChain());
+
         assertThat(allowedResponse.getStatus()).isEqualTo(200);
         assertThat(otherRoomResponse.getStatus()).isEqualTo(401);
         assertThat(createRoomResponse.getStatus()).isEqualTo(401);
+        assertThat(googleResponse.getStatus()).isEqualTo(200);
+        assertThat(roomFileResponse.getStatus()).isEqualTo(200);
     }
 
     private MockHttpServletRequest guestRequest(String method, String path) {

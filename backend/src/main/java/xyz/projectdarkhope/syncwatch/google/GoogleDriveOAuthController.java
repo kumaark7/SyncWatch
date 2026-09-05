@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.room.Room;
+import xyz.projectdarkhope.syncwatch.room.RoomStore;
 
 import java.util.Map;
 
@@ -12,13 +14,16 @@ import java.util.Map;
 public class GoogleDriveOAuthController {
     private final GoogleDriveOAuthService googleOAuth;
     private final AuthService authService;
+    private final RoomStore rooms;
 
     public GoogleDriveOAuthController(
             GoogleDriveOAuthService googleOAuth,
-            AuthService authService
+            AuthService authService,
+            RoomStore rooms
     ) {
         this.googleOAuth = googleOAuth;
         this.authService = authService;
+        this.rooms = rooms;
     }
 
     @PostMapping("/code")
@@ -30,16 +35,20 @@ public class GoogleDriveOAuthController {
         if (!"XmlHttpRequest".equals(requestedWith)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization request"));
         }
-        String userId = currentUserId(request);
-        if (userId == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        DrivePrincipal principal = currentPrincipal(request);
+        if (principal == null) {
+            return unauthorized(request);
         }
         try {
-            GoogleDriveOAuthService.Credentials credentials = googleOAuth.exchangeAuthorizationCode(
-                    userId,
-                    codeRequest == null ? null : codeRequest.code(),
-                    codeRequest == null ? null : codeRequest.redirectUri()
-            );
+            String code = codeRequest == null ? null : codeRequest.code();
+            String redirectUri = codeRequest == null ? null : codeRequest.redirectUri();
+            GoogleDriveOAuthService.Credentials credentials = principal.temporary()
+                    ? googleOAuth.exchangeTemporaryAuthorizationCode(
+                            principal.ownerId(), code, redirectUri
+                    )
+                    : googleOAuth.exchangeAuthorizationCode(
+                            principal.ownerId(), code, redirectUri
+                    );
             return ResponseEntity.ok(new GoogleConnectionResponse(
                     true, credentials.accessToken(), credentials.expiresAt()
             ));
@@ -50,12 +59,15 @@ public class GoogleDriveOAuthController {
 
     @GetMapping("/connection")
     public ResponseEntity<GoogleConnectionResponse> connection(HttpServletRequest request) {
-        String userId = currentUserId(request);
-        if (userId == null) {
-            return ResponseEntity.status(401).body(GoogleConnectionResponse.disconnected());
+        DrivePrincipal principal = currentPrincipal(request);
+        if (principal == null) {
+            return ResponseEntity.status(authService.isGuestAuthenticated(request.getSession(false))
+                    ? 403 : 401).body(GoogleConnectionResponse.disconnected());
         }
         try {
-            GoogleDriveOAuthService.Credentials credentials = googleOAuth.refreshConnection(userId);
+            GoogleDriveOAuthService.Credentials credentials = googleOAuth.refreshConnection(
+                    principal.ownerId()
+            );
             return ResponseEntity.ok(
                     new GoogleConnectionResponse(true, credentials.accessToken(), credentials.expiresAt())
             );
@@ -66,15 +78,41 @@ public class GoogleDriveOAuthController {
 
     @DeleteMapping("/connection")
     public ResponseEntity<Void> disconnect(HttpServletRequest request) {
-        String userId = currentUserId(request);
-        if (userId == null) {
-            return ResponseEntity.status(401).build();
+        DrivePrincipal principal = currentPrincipal(request);
+        if (principal == null) {
+            return ResponseEntity.status(authService.isGuestAuthenticated(request.getSession(false))
+                    ? 403 : 401).build();
         }
-        googleOAuth.disconnect(userId);
+        googleOAuth.disconnect(principal.ownerId());
         return ResponseEntity.noContent().build();
     }
 
-    private String currentUserId(HttpServletRequest request) {
-        return authService.sessionUserId(request.getSession(false)).orElse(null);
+    private ResponseEntity<?> unauthorized(HttpServletRequest request) {
+        int status = authService.isGuestAuthenticated(request.getSession(false)) ? 403 : 401;
+        return ResponseEntity.status(status).body(Map.of(
+                "error",
+                status == 403 ? "Only the current host can manage Google Drive" : "Authentication required"
+        ));
     }
+
+    private DrivePrincipal currentPrincipal(HttpServletRequest request) {
+        var session = request.getSession(false);
+        String userId = authService.sessionUserId(session).orElse(null);
+        if (userId != null) {
+            return new DrivePrincipal(userId, false);
+        }
+        if (!authService.isGuestAuthenticated(session)) {
+            return null;
+        }
+
+        String roomId = (String) session.getAttribute(AuthService.SESSION_GUEST_ROOM);
+        String clientId = (String) session.getAttribute(AuthService.SESSION_CLIENT_ID);
+        String guestId = (String) session.getAttribute(AuthService.SESSION_GUEST_ID);
+        Room room = rooms.find(roomId).orElse(null);
+        return room != null && room.isHostOwnedBy(clientId, guestId)
+                ? new DrivePrincipal(guestId, true)
+                : null;
+    }
+
+    private record DrivePrincipal(String ownerId, boolean temporary) {}
 }

@@ -37,6 +37,7 @@ public class GoogleDriveOAuthService {
     private final ObjectMapper objectMapper;
     private final GoogleDriveConnectionRepository connections;
     private final ConcurrentHashMap<String, Object> refreshLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> temporaryConnections = new ConcurrentHashMap<>();
     private final String clientId;
     private final String clientSecret;
     private final String frontendOrigin;
@@ -56,7 +57,24 @@ public class GoogleDriveOAuthService {
     }
 
     public Credentials exchangeAuthorizationCode(String userId, String code, String redirectUri) {
-        requireUserId(userId);
+        return exchangeAuthorizationCode(userId, code, redirectUri, false);
+    }
+
+    public Credentials exchangeTemporaryAuthorizationCode(
+            String ownerId,
+            String code,
+            String redirectUri
+    ) {
+        return exchangeAuthorizationCode(ownerId, code, redirectUri, true);
+    }
+
+    private Credentials exchangeAuthorizationCode(
+            String ownerId,
+            String code,
+            String redirectUri,
+            boolean temporary
+    ) {
+        requireUserId(ownerId);
         requireConfigured();
         if (code == null || code.isBlank()) {
             throw new GoogleOAuthException("Google authorization code is required");
@@ -79,7 +97,7 @@ public class GoogleDriveOAuthService {
             );
         }
         Credentials credentials = credentials(response, refreshToken);
-        saveRefreshToken(userId, credentials.refreshToken());
+        saveRefreshToken(ownerId, credentials.refreshToken(), temporary);
         return credentials;
     }
 
@@ -110,7 +128,10 @@ public class GoogleDriveOAuthService {
 
     public void disconnect(String userId) {
         requireUserId(userId);
-        String encryptedRefreshToken = connections.findEncryptedRefreshToken(userId).orElse(null);
+        boolean temporary = isTemporaryOwner(userId);
+        String encryptedRefreshToken = temporary
+                ? temporaryConnections.get(userId)
+                : connections.findEncryptedRefreshToken(userId).orElse(null);
         if (encryptedRefreshToken == null) {
             return;
         }
@@ -128,26 +149,50 @@ public class GoogleDriveOAuthService {
         } catch (Exception ignored) {
             // Always remove the local connection, even when Google is temporarily unavailable.
         } finally {
-            connections.delete(userId);
+            if (temporary) {
+                forgetTemporaryConnection(userId);
+            } else {
+                connections.delete(userId);
+            }
         }
+    }
+
+    public void forgetTemporaryConnection(String ownerId) {
+        if (!isTemporaryOwner(ownerId)) {
+            return;
+        }
+        temporaryConnections.remove(ownerId);
+        refreshLocks.remove(ownerId);
     }
 
     private Credentials refreshForUser(String userId) {
         synchronized (refreshLocks.computeIfAbsent(userId, ignored -> new Object())) {
             Credentials refreshed = refresh(storedRefreshToken(userId));
-            saveRefreshToken(userId, refreshed.refreshToken());
+            saveRefreshToken(userId, refreshed.refreshToken(), isTemporaryOwner(userId));
             return refreshed;
         }
     }
 
     private String storedRefreshToken(String userId) {
+        if (isTemporaryOwner(userId)) {
+            String encryptedToken = temporaryConnections.get(userId);
+            if (encryptedToken == null) {
+                throw new GoogleOAuthException("Google Drive is not connected");
+            }
+            return decrypt(encryptedToken);
+        }
         return connections.findEncryptedRefreshToken(userId)
                 .map(this::decrypt)
                 .orElseThrow(() -> new GoogleOAuthException("Google Drive is not connected"));
     }
 
-    private void saveRefreshToken(String userId, String refreshToken) {
-        connections.save(userId, encrypt(refreshToken));
+    private void saveRefreshToken(String userId, String refreshToken, boolean temporary) {
+        String encryptedToken = encrypt(refreshToken);
+        if (temporary) {
+            temporaryConnections.put(userId, encryptedToken);
+        } else {
+            connections.save(userId, encryptedToken);
+        }
     }
 
     private Credentials refresh(String refreshToken) {
@@ -246,6 +291,10 @@ public class GoogleDriveOAuthService {
         if (userId == null || userId.isBlank()) {
             throw new GoogleOAuthException("Authenticated SyncWatch user is required");
         }
+    }
+
+    private boolean isTemporaryOwner(String ownerId) {
+        return ownerId != null && ownerId.startsWith("guest:");
     }
 
     private String normalizeOrigin(String value) {
