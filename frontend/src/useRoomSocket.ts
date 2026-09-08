@@ -7,6 +7,9 @@ import type { ChatMessage } from "./party/chat/types";
 const wsUrl = () => API_URL.replace(/^http/, "ws") + "/ws";
 export const ROOM_CLIENT_ID_STORAGE_KEY = "syncwatch-client-id";
 let connectionSequence = 0;
+const SAFE_CLOSE_REASONS = new Set([
+  "Normal closure", "Going away", "Heartbeat timeout", "Session closed"
+]);
 
 function makeClientId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -101,17 +104,24 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     let disposed = false;
     let attempt = 0;
     let connectedAt = 0;
+    let connectedTick = 0;
+    let serverOutgoingMs: number | null = null;
+    let serverIncomingMs: number | null = null;
     const connection = ++connectionSequence;
     const diagnose = (
       event: string,
-      details: Record<string, number | boolean | null> = {}
+      details: Record<string, string | number | boolean | null> = {}
     ) => {
-      // Never log STOMP frames, close reasons, URLs, or participant identifiers.
+      // Free-form frames/reasons can contain secrets. Only allowlisted fields are logged.
       console.info("[SyncWatch STOMP]", {
         event, connection, attempt,
-        connectedForMs: connectedAt ? Date.now() - connectedAt : 0,
-        hidden: document.visibilityState !== "visible",
+        timestamp: new Date().toISOString(),
+        establishedAt: connectedAt ? new Date(connectedAt).toISOString() : null,
+        uptimeMs: connectedAt ? Math.round(performance.now() - connectedTick) : 0,
+        visibility: document.visibilityState,
         online: navigator.onLine,
+        reconnectDelayMs: client.reconnectDelay,
+        serverOutgoingMs, serverIncomingMs,
         ...details
       });
     };
@@ -127,19 +137,20 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
         if (disposed) return;
         attempt++;
         connectedAt = 0;
+        serverOutgoingMs = null;
+        serverIncomingMs = null;
         diagnose("connecting");
       },
       onConnect: (frame) => {
         if (disposed) return;
         connectedAt = Date.now();
+        connectedTick = performance.now();
         const heartbeat = frame.headers["heart-beat"];
         const negotiated = /^\d+,\d+$/.test(heartbeat ?? "")
           ? heartbeat.split(",").map(Number)
           : [null, null];
-        diagnose("connected", {
-          serverOutgoingMs: negotiated[0],
-          serverIncomingMs: negotiated[1]
-        });
+        [serverOutgoingMs, serverIncomingMs] = negotiated;
+        diagnose("connected");
         setConnected(true);
 
         client.subscribe(`/topic/room/${roomId}`, (message) => {
@@ -190,7 +201,14 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
       },
       onWebSocketClose: (event) => {
         if (disposed) return;
-        diagnose("transport-closed", { code: event.code, clean: event.wasClean });
+        diagnose("transport-closed", {
+          code: event.code,
+          clean: event.wasClean,
+          reason: !event.reason ? "not-provided"
+            : SAFE_CLOSE_REASONS.has(event.reason) ? event.reason : "redacted",
+          nextAttempt: client.active ? attempt + 1 : null
+        });
+        connectedAt = 0;
         roomJoinedRef.current = false;
         setRoomJoined(false);
         setConnected(false);
@@ -198,10 +216,13 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
     });
 
     clientRef.current = client;
+    const onVisibilityChange = () => diagnose("visibility-changed");
+    document.addEventListener("visibilitychange", onVisibilityChange);
     client.activate();
 
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       diagnose("effect-cleanup");
       clientRef.current = null;
       roomJoinedRef.current = false;

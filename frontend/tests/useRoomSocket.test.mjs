@@ -13,6 +13,15 @@ const source = ts.transpileModule(
 function harness() {
   const slots = [], clients = [], logs = [];
   const storage = new Map();
+  let monotonicTime = 12345;
+  const listeners = new Map();
+  const browserDocument = {
+    visibilityState: "visible",
+    addEventListener: (event, callback) => listeners.set(event, callback),
+    removeEventListener: (event, callback) => {
+      if (listeners.get(event) === callback) listeners.delete(event);
+    }
+  };
   let cursor = 0, pending = [];
   const same = (a, b) => a && b && a.length === b.length
     && a.every((value, index) => Object.is(value, b[index]));
@@ -39,6 +48,7 @@ function harness() {
     }
   };
   class Client {
+    active = true;
     connected = false;
     subscriptions = [];
     published = [];
@@ -72,12 +82,14 @@ function harness() {
       setItem: (key, value) => storage.set(key, value),
       removeItem: key => storage.delete(key)
     },
-    document: { visibilityState: "visible" },
+    document: browserDocument,
+    performance: { now: () => monotonicTime },
     navigator: { onLine: true },
     console: { info: (...args) => logs.push(args), warn: (...args) => logs.push(args) }
   });
   return {
-    clients, logs,
+    clients, logs, listeners, browserDocument,
+    advanceTime(milliseconds) { monotonicTime += milliseconds; },
     render(room = "ROOM", name = "Name") {
       cursor = 0;
       const result = exports.useRoomSocket(room, name, "stable-client");
@@ -179,4 +191,48 @@ test("heartbeat diagnostics record lifecycle without exposing frame contents", (
   for (const sensitive of ["private-data", "stable-client", "ROOM", "Name"]) {
     assert.equal(output.includes(sensitive), false);
   }
+});
+
+test("timestamps, heartbeat values, reconnect attempts and reasons are bounded diagnostics", () => {
+  const h = harness();
+  h.render();
+  const client = h.clients[0];
+  client.beforeConnect();
+  client.connect();
+  const connected = h.logs.at(-1)[1];
+  assert.equal(connected.attempt, 1);
+  assert.equal(new Date(connected.timestamp).toISOString(), connected.timestamp);
+  assert.equal(new Date(connected.establishedAt).toISOString(), connected.establishedAt);
+  assert.equal(connected.uptimeMs, 0);
+  assert.equal(connected.serverOutgoingMs, 10000);
+  assert.equal(connected.serverIncomingMs, 10000);
+  assert.equal(connected.reconnectDelayMs, 2000);
+  h.advanceTime(2500);
+  client.onHeartbeatLost();
+  assert.equal(h.logs.at(-1)[1].uptimeMs, 2500);
+  for (const [reason, expected] of [
+    ["", "not-provided"],
+    ["Heartbeat timeout", "Heartbeat timeout"],
+    ["Heartbeat timeout: secret", "redacted"],
+    ["user=private-data", "redacted"]
+  ]) {
+    client.onWebSocketClose({ code: 1006, wasClean: false, reason });
+    assert.equal(h.logs.at(-1)[1].reason, expected);
+    assert.equal(h.logs.at(-1)[1].nextAttempt, 2);
+  }
+  client.beforeConnect();
+  assert.equal(h.logs.at(-1)[1].attempt, 2);
+  assert.equal(h.logs.at(-1)[1].establishedAt, null);
+});
+
+test("visibility changes log without recreating the socket; cleanup removes listener", () => {
+  const h = harness();
+  h.render();
+  h.browserDocument.visibilityState = "hidden";
+  h.listeners.get("visibilitychange")();
+  assert.equal(h.logs.at(-1)[1].visibility, "hidden");
+  assert.equal(h.logs.at(-1)[1].event, "visibility-changed");
+  assert.equal(h.clients.length, 1);
+  h.unmount();
+  assert.equal(h.listeners.size, 0);
 });
