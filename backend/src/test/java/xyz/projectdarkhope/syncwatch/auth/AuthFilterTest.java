@@ -84,6 +84,16 @@ class AuthFilterTest {
         assertThat(otherRoomScreenShareResponse.getStatus()).isEqualTo(401);
     }
 
+    @Test
+    void guestTransferRouteIsLimitedToInvitedRoom() throws Exception {
+        for (String roomId : new String[] {"ABC123", "OTHER1"}) {
+            MockHttpServletRequest request = guestRequest("POST", "/api/rooms/" + roomId + "/host");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(request, response, new MockFilterChain());
+            assertThat(response.getStatus()).isEqualTo(roomId.equals("ABC123") ? 200 : 401);
+        }
+    }
+
     private MockHttpServletRequest guestRequest(String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.getSession(true).setAttribute(AuthService.SESSION_GUEST_ROOM, "ABC123");

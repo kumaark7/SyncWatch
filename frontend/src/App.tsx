@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import GuestJoinPage from "./auth/GuestJoinPage";
@@ -176,6 +177,7 @@ function AuthenticatedApp({
   const [nameTag, setNameTag] = useState(restoredNameTag);
 
   const [roomName, setRoomName] = useState("");
+  const [closingVideo, setClosingVideo] = useState(false);
 
   const [joinedNameTag, setJoinedNameTag] = useState(restoredNameTag);
 
@@ -858,6 +860,29 @@ function AuthenticatedApp({
     setRoom(await response.json());
   }
 
+  async function closeVideo() {
+    if (closingVideo || !room?.hasFile || !room.isHost) return;
+    if (!window.confirm("Close the current video for everyone?")) return;
+    setClosingVideo(true);
+    try {
+      if (!await confirmHostSession()) return;
+      const response = await authenticatedFetch(
+        `${API_URL}/api/rooms/${roomId}/file?clientId=${encodeURIComponent(clientId)}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        if (response.status !== 401) showToast("Could not close the video");
+        return;
+      }
+      setRoom(await response.json());
+      showToast("Video closed");
+    } catch {
+      showToast("Could not close the video");
+    } finally {
+      setClosingVideo(false);
+    }
+  }
+
   async function disconnectGoogleDrive() {
     if (!await confirmHostSession()) {
       return;
@@ -1114,13 +1139,13 @@ function AuthenticatedApp({
 
         <div className="topActions">
           <ConnectionStatus connected={connected} hasRoom={hasRoom} />
-          {room?.hasFile && (
+          {hasRoom && (
             <TheaterToggle
               enabled={theaterMode}
               onToggle={() => void toggleTheaterMode()}
             />
           )}
-          {room?.hasFile && theaterMode && (
+          {hasRoom && (
             <FullscreenToggle
               active={fullscreenCanHostOverlay}
               onToggle={() => void toggleContainerFullscreen()}
@@ -1129,6 +1154,13 @@ function AuthenticatedApp({
           {hasRoom && (
             <button className="headerLeaveRoom" onClick={() => void leaveRoom()}>
               Leave Room
+            </button>
+          )}
+          {room?.isHost && room.hasFile && (
+            <button className="headerCloseVideo" disabled={closingVideo}
+              onClick={() => void closeVideo()} title="Close current video">
+              <X size={18} aria-hidden="true" />
+              {closingVideo ? "Closing Video..." : "Close Video"}
             </button>
           )}
           {room?.isHost && !guestSession && (
@@ -1320,7 +1352,7 @@ function AuthenticatedApp({
                   onChatError={showToast}
                   onCopyRoom={() => void copyRoomCode()}
                   onCopyInvite={() => void copyInvite()}
-                  canTransferHost={room.isHost && !guestSession}
+                  canTransferHost={room.isHost}
                   onTransferHost={transferRoomHost}
                 />
               )}

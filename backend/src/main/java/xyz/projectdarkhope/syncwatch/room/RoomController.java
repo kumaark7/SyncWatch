@@ -103,7 +103,10 @@ public class RoomController {
             );
         }
 
-        String userId = currentUserId(browserRequest);
+        String registeredUserId = currentUserId(browserRequest);
+        String userId = registeredUserId != null ? registeredUserId
+                : authService.participantOwnerId(browserRequest.getSession(false),
+                        roomId, request.currentHostClientId()).orElse(null);
         if (userId == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
         }
@@ -253,7 +256,7 @@ public class RoomController {
             String ownerId = currentParticipantOwnerId(browserRequest, room, clientId);
             if (ownerId == null || !room.isHostOwnedBy(clientId, ownerId)) {
                 return ResponseEntity.status(403).body(
-                        Map.of("error", "Only the room host can disconnect Google Drive")
+                        Map.of("error", "Only the room host can close the video")
                 );
             }
 

@@ -29,7 +29,14 @@ export default function ParticipantsPanel({
               <span className="onlineDot" />
             </span>
             <span className="participantText">
-              <strong>{participant.nameTag}</strong>
+              <strong className="participantName">
+                <span>{participant.nameTag}</span>
+                {participant.host && (
+                  <span className="hostCrown" title="Room Host" role="img" aria-label="Room Host">
+                    <Crown size={18} strokeWidth={2.2} aria-hidden="true" />
+                  </span>
+                )}
+              </strong>
               <span className="participantMeta">
                 {participant.host ? "Host" : "Watching"}
                 {isYou ? " · You" : ""}

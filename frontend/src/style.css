@@ -917,6 +917,32 @@ input, select {
   background: var(--success);
 }
 
+.participantText strong.participantName {
+  display: flex;
+  white-space: normal;
+  align-items: center;
+  gap: 8px;
+}
+
+.participantName > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hostCrown {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: #facc15;
+}
+
+.headerCloseVideo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+}
+
 .participantText {
   min-width: 0;
   flex: 1;

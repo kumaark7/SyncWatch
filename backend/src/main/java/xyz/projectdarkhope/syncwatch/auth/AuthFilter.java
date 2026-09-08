@@ -80,6 +80,7 @@ public class AuthFilter extends OncePerRequestFilter {
         }
         if ("POST".equals(method)) {
             return path.equals(roomPath + "/leave")
+                    || path.equals(roomPath + "/host")
                     || path.equals(roomPath + "/file")
                     || path.equals(roomPath + "/screen-share/start")
                     || path.equals(roomPath + "/screen-share/stop");

@@ -182,6 +182,51 @@ class RoomControllerTest {
         assertThat(room.getAccessToken()).isEqualTo("guest-access");
     }
 
+    @Test
+    void promotedAnonymousHostCanTransferButCannotActAfterLosingHost() {
+        Room room = rooms.create("Room");
+        room.claimHost("guest-client", "guest:owner");
+        room.registerParticipant("guest-client", "guest:owner", "Guest", "guest-session");
+        room.registerParticipant("other", "registered-user", "Other", "other-session");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession(true);
+        when(auth.participantOwnerId(any(), eq(room.getId()), eq("guest-client")))
+                .thenReturn(Optional.of("guest:owner"));
+        assertThat(controller.transferHost(room.getId(),
+                new HostTransferRequest("guest-client", "other"), request)
+                .getStatusCode().value()).isEqualTo(200);
+        assertThat(room.isHost("other")).isTrue();
+        assertThat(controller.transferHost(room.getId(),
+                new HostTransferRequest("guest-client", "guest-client"), request)
+                .getStatusCode().value()).isEqualTo(403);
+        assertThat(controller.transferHost(room.getId(),
+                new HostTransferRequest("other", "guest-client"), request)
+                .getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void closingVideoResetsPlaybackWithoutDisconnectingDriveOrClosingRoom() {
+        Room room = rooms.create("Room");
+        room.claimHost("guest-client", "guest:owner");
+        room.registerParticipant("guest-client", "guest:owner", "Guest", "session");
+        room.setFileId("file");
+        room.setFileName("Movie");
+        room.setDriveCredentials("guest:owner", "access", 1234);
+        room.updatePlayback(50, true);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession(true);
+        when(auth.participantOwnerId(any(), eq(room.getId()), eq("guest-client")))
+                .thenReturn(Optional.of("guest:owner"));
+        assertThat(controller.clearFile(room.getId(), "guest-client", request)
+                .getStatusCode().value()).isEqualTo(200);
+        assertThat(room.hasFile()).isFalse();
+        assertThat(room.isPlaying()).isFalse();
+        assertThat(room.getCurrentTime()).isZero();
+        assertThat(rooms.find(room.getId())).contains(room);
+        assertThat(room.isHost("guest-client")).isTrue();
+        verifyNoInteractions(googleOAuth);
+    }
+
     private MockHttpServletRequest requestFor(String userId) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.getSession(true);
