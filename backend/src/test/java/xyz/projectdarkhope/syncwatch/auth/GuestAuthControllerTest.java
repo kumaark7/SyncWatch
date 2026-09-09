@@ -51,4 +51,17 @@ class GuestAuthControllerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(404);
         assertThat(request.getSession(false)).isNull();
     }
+
+    @Test
+    void guestAuthenticationReplacesAnyPreviousSessionAndIdentity() {
+        Room room = rooms.create("Test room");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        var old = (org.springframework.mock.web.MockHttpSession) request.getSession(true);
+        old.setAttribute(AuthService.SESSION_USER_ID, "previous-account");
+        String id = old.getId();
+        controller.join(new GuestLoginRequest(room.getId(), "Guest"), request);
+        assertThat(old.isInvalid()).isTrue();
+        assertThat(request.getSession().getId()).isNotEqualTo(id);
+        assertThat(request.getSession().getAttribute(AuthService.SESSION_USER_ID)).isNull();
+    }
 }

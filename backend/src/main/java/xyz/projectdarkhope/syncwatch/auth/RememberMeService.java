@@ -77,7 +77,10 @@ public class RememberMeService {
             return Optional.empty();
         }
 
-        tokens.delete(tokenHash);
+        // Atomic consumption: only one racing restoration may rotate a token.
+        if (!tokens.consume(tokenHash, Instant.now())) {
+            return Optional.empty();
+        }
         issueNewToken(user.id(), response);
         return Optional.of(user);
     }

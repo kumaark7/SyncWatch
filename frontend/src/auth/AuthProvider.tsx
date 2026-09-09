@@ -7,6 +7,7 @@ import {
   useState
 } from "react";
 import type { ReactNode } from "react";
+import { browserRequest } from "./browserRequest";
 import {
   getAuthSession,
   joinGuest,
@@ -88,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     input: RequestInfo | URL,
     init: RequestInit = {}
   ) => {
-    const response = await fetch(input, {
+    const response = await browserRequest(input, {
       ...init,
       credentials: "include"
     });

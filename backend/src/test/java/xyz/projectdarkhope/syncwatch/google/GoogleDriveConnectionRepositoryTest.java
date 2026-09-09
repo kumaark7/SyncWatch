@@ -74,4 +74,16 @@ class GoogleDriveConnectionRepositoryTest {
                 Instant.now()
         ));
     }
+
+    @Test
+    void refreshCannotResurrectDeletedConnectionOrOverwriteAnotherOwnersToken() {
+        connections.save("user-a", "old-a");
+        connections.save("user-b", "old-b");
+        assertThat(connections.replaceIfUnchanged("user-a", "old-b", "new")).isFalse();
+        assertThat(connections.replaceIfUnchanged("user-a", "old-a", "new-a")).isTrue();
+        connections.delete("user-a");
+        assertThat(connections.replaceIfUnchanged("user-a", "new-a", "resurrected")).isFalse();
+        assertThat(connections.findEncryptedRefreshToken("user-a")).isEmpty();
+        assertThat(connections.findEncryptedRefreshToken("user-b")).contains("old-b");
+    }
 }

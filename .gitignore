@@ -2,9 +2,14 @@ node_modules/
 dist/
 target/
 .env
+.env.*
+!.env.example
 frontend/.env
 *.log
 syncwatch-users*.db
+*.mv.db
+*.trace.db
+*.lock.db
 .idea/
 .vscode/
 

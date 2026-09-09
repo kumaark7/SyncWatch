@@ -116,4 +116,33 @@ class RememberMeServiceTest {
         )).isZero();
         assertThat(response.getCookie(RememberMeService.COOKIE_NAME).getMaxAge()).isZero();
     }
+
+    @Test
+    void concurrentRestoresConsumeOneTokenExactlyOnce() throws Exception {
+        MockHttpServletResponse issued = new MockHttpServletResponse();
+        rememberMe.issue(user.id(), new MockHttpServletRequest(), issued);
+        Cookie cookie = issued.getCookie(RememberMeService.COOKIE_NAME);
+        var barrier = new java.util.concurrent.CyclicBarrier(2);
+        var repository = new RememberMeTokenRepository(jdbc) {
+            @Override
+            public java.util.Optional<RememberMeToken> find(String hash) {
+                var token = super.find(hash);
+                try { barrier.await(5, java.util.concurrent.TimeUnit.SECONDS); }
+                catch (Exception error) { throw new AssertionError(error); }
+                return token;
+            }
+        };
+        var service = new RememberMeService(repository, new UserRepository(jdbc), Duration.ofDays(30), true);
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<Boolean> restore = () -> {
+                MockHttpServletRequest request = new MockHttpServletRequest();
+                request.setCookies(cookie);
+                return service.restore(request, new MockHttpServletResponse()).isPresent();
+            };
+            var first = executor.submit(restore);
+            var second = executor.submit(restore);
+            assertThat(java.util.List.of(first.get(), second.get())).containsExactlyInAnyOrder(true, false);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM remember_me_tokens", Integer.class)).isEqualTo(1);
+    }
 }

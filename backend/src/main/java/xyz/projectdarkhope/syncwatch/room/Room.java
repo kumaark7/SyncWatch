@@ -193,10 +193,15 @@ public class Room {
             String nameTag,
             String sessionId
     ) {
-        if (clientId == null || clientId.isBlank()
+        if (clientId == null || clientId.isBlank() || clientId.length() > 128
                 || userId == null || userId.isBlank()
-                || nameTag == null || nameTag.isBlank()
+                || nameTag == null || nameTag.isBlank() || nameTag.codePointCount(0, nameTag.length()) > 32
                 || sessionId == null || sessionId.isBlank()) {
+            return new ParticipantRegistration(false, false, null);
+        }
+
+        String sessionClientId = getClientIdForSession(sessionId);
+        if (sessionClientId != null && !sessionClientId.equals(clientId)) {
             return new ParticipantRegistration(false, false, null);
         }
 

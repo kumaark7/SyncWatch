@@ -54,8 +54,7 @@ public class ChatController {
         if (senderId == null) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
-                    "Ignored chat message before participant JOIN for room {0}",
-                    room.getId()
+                    "Ignored chat message before participant JOIN"
             );
             return;
         }

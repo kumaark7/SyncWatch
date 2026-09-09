@@ -29,6 +29,26 @@ class AuthControllerTest {
     );
 
     @Test
+    void loginSignupAndRememberedRestoreReplaceExistingSessionIds() {
+        when(auth.authenticate(any())).thenReturn(user);
+        when(auth.register(any())).thenReturn(user);
+        when(rememberMe.restore(any(), any())).thenReturn(Optional.of(user));
+        for (int flow = 0; flow < 3; flow++) {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            var old = (org.springframework.mock.web.MockHttpSession) request.getSession(true);
+            old.setAttribute(AuthService.SESSION_GUEST_ID, "guest:old");
+            String previousId = old.getId();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            if (flow == 0) controller.login(new LoginRequest("Known", "strong-pass"), request, response);
+            else if (flow == 1) controller.signUp(new SignUpRequest("Known", "k@example.com", "strong-pass", "strong-pass"), request, response);
+            else controller.session(request, response);
+            assertThat(old.isInvalid()).isTrue();
+            assertThat(request.getSession().getId()).isNotEqualTo(previousId);
+            assertThat(request.getSession().getAttribute(AuthService.SESSION_GUEST_ID)).isNull();
+        }
+    }
+
+    @Test
     void signUpEstablishesUserIdSessionAndReturnsOnlySafeIdentity() {
         when(auth.register(any(SignUpRequest.class))).thenReturn(user);
         MockHttpServletRequest request = new MockHttpServletRequest();

@@ -111,6 +111,20 @@ class AuthServiceTest {
         ));
     }
 
+    @Test
+    void unknownAndKnownUsersBothPerformPasswordVerificationWithSameError() {
+        var encoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
+        AuthService service = new AuthService(users, encoder);
+        UserAccount known = register("Known", "known@example.com");
+        assertAuthError(() -> service.authenticate(new LoginRequest("missing", "wrong-pass")),
+                HttpStatus.UNAUTHORIZED, "Invalid email, username, or password");
+        assertAuthError(() -> service.authenticate(new LoginRequest("Known", "wrong-pass")),
+                HttpStatus.UNAUTHORIZED, "Invalid email, username, or password");
+        org.mockito.Mockito.verify(encoder, org.mockito.Mockito.times(2)).matches(
+                org.mockito.ArgumentMatchers.eq("wrong-pass"), org.mockito.ArgumentMatchers.startsWith("$2"));
+        org.mockito.Mockito.verify(encoder).matches("wrong-pass", known.passwordHash());
+    }
+
     private void assertAuthError(
             Runnable action,
             HttpStatus status,

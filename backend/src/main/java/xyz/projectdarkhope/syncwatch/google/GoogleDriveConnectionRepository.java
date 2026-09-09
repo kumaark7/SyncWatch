@@ -59,4 +59,11 @@ public class GoogleDriveConnectionRepository {
             jdbc.update("DELETE FROM google_drive_connections WHERE user_id = ?", userId);
         }
     }
+
+    public boolean replaceIfUnchanged(String userId, String previous, String encryptedToken) {
+        return jdbc.update("""
+                UPDATE google_drive_connections SET encrypted_refresh_token = ?, updated_at = ?
+                WHERE user_id = ? AND encrypted_refresh_token = ?
+                """, encryptedToken, Instant.now(), userId, previous) == 1;
+    }
 }

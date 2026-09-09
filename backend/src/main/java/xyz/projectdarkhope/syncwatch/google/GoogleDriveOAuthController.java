@@ -49,6 +49,10 @@ public class GoogleDriveOAuthController {
                     : googleOAuth.exchangeAuthorizationCode(
                             principal.ownerId(), code, redirectUri
                     );
+            if (!principal.equals(currentPrincipal(request))) {
+                if (principal.temporary()) googleOAuth.forgetTemporaryConnection(principal.ownerId());
+                return unauthorized(request);
+            }
             return ResponseEntity.ok(new GoogleConnectionResponse(
                     true, credentials.accessToken(), credentials.expiresAt()
             ));
@@ -68,6 +72,9 @@ public class GoogleDriveOAuthController {
             GoogleDriveOAuthService.Credentials credentials = googleOAuth.refreshConnection(
                     principal.ownerId()
             );
+            if (!principal.equals(currentPrincipal(request))) {
+                return ResponseEntity.status(403).body(GoogleConnectionResponse.disconnected());
+            }
             return ResponseEntity.ok(
                     new GoogleConnectionResponse(true, credentials.accessToken(), credentials.expiresAt())
             );

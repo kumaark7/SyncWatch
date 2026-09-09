@@ -16,7 +16,7 @@ import java.util.List;
 
 @Service
 public class LiveKitTokenService {
-    private static final long TOKEN_TTL_MS = Duration.ofHours(1).toMillis();
+    private static final long TOKEN_TTL_MS = Duration.ofMinutes(10).toMillis();
 
     private final String serverUrl;
     private final String apiKey;

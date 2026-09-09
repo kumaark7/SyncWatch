@@ -30,5 +30,11 @@ class LiveKitTokenServiceTest {
                 "screen_share",
                 "screen_share_audio"
         );
+        var claims = new tools.jackson.databind.ObjectMapper().readTree(payload);
+        assertThat(claims.get("exp").asLong() - java.time.Instant.now().getEpochSecond()).isBetween(599L, 601L);
+        assertThat(claims.get("sub").asString()).isEqualTo("syncwatch:ABC123:client-1");
+        assertThat(claims.get("video").get("room").asString()).isEqualTo("syncwatch-ABC123");
+        assertThat(claims.get("video").path("roomAdmin").asBoolean()).isFalse();
+        assertThat(claims.get("video").path("roomCreate").asBoolean()).isFalse();
     }
 }

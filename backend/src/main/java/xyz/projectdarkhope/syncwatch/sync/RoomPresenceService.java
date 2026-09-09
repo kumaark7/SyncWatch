@@ -107,7 +107,7 @@ public class RoomPresenceService {
             for (String oldSessionId : pending.sessionIds) {
                 room.removeSession(oldSessionId);
             }
-            log.info("STOMP reconnect replaced a pending room departure for room {}", room.getId());
+            log.info("STOMP reconnect replaced a pending room departure");
             return registration;
         }
     }
@@ -134,7 +134,7 @@ public class RoomPresenceService {
                         () -> expireDeparture(key, pending),
                         Instant.now().plus(gracePeriod)
                 );
-                log.info("STOMP disconnect scheduled a presence grace period for room {}", room.getId());
+                log.info("STOMP disconnect scheduled a presence grace period");
             }
         }
     }
@@ -203,7 +203,7 @@ public class RoomPresenceService {
                 SyncEvent.roomClosed(room, clientId)
         );
         chatService.removeRoom(room.getId());
-        log.info("Room {} was explicitly closed by its host", room.getId());
+        log.info("Room was explicitly closed by its host");
         return CloseRoomResult.CLOSED;
     }
 
@@ -230,7 +230,7 @@ public class RoomPresenceService {
                 return;
             }
 
-            log.info("Presence grace period expired for room {}", room.getId());
+            log.info("Presence grace period expired");
             completeDepartures(room, departures, "reconnect grace expiration");
             cleanupTemporaryDrive(room, participantOwnerId);
         }
@@ -263,7 +263,7 @@ public class RoomPresenceService {
                             hostMessage
                     );
                 }
-                log.info("Room {} transferred host after {}", room.getId(), reason);
+                log.info("Room transferred host after {}", reason);
             }
         }
 
@@ -273,7 +273,7 @@ public class RoomPresenceService {
 
         if (!roomHasParticipants && rooms.remove(room.getId(), room)) {
             chatService.removeRoom(room.getId());
-            log.info("Removed empty room {} after {}", room.getId(), reason);
+            log.info("Removed empty room after {}", reason);
         }
     }
 

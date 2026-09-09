@@ -35,10 +35,12 @@ public class AuthService {
 
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
+    private final String dummyPasswordHash;
 
     public AuthService(UserRepository users, PasswordEncoder passwordEncoder) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
+        this.dummyPasswordHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
     public UserAccount register(SignUpRequest request) {
@@ -96,10 +98,13 @@ public class AuthService {
     public UserAccount authenticate(LoginRequest request) {
         String identifier = request == null ? "" : clean(request.identifier());
         String password = request == null || request.password() == null ? "" : request.password();
-        Optional<UserAccount> user = users.findByUsernameOrEmail(identifier);
-        if (identifier.isBlank() || password.isBlank()
-                || user.isEmpty()
-                || !passwordEncoder.matches(password, user.get().passwordHash())) {
+        Optional<UserAccount> user = identifier.length() > 254
+                ? Optional.empty() : users.findByUsernameOrEmail(identifier);
+        boolean validLength = password.getBytes(StandardCharsets.UTF_8).length <= 72;
+        boolean passwordMatches = passwordEncoder.matches(validLength ? password : "",
+                user.map(UserAccount::passwordHash).orElse(dummyPasswordHash));
+        if (identifier.isBlank() || password.isBlank() || !validLength
+                || user.isEmpty() || !passwordMatches) {
             throw new AuthException(HttpStatus.UNAUTHORIZED, "Invalid email, username, or password");
         }
         return user.get();

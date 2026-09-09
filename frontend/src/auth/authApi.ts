@@ -1,4 +1,5 @@
 import { API_URL } from "../api";
+import { browserRequest as fetch } from "./browserRequest";
 
 export type AuthSession = {
   authenticated: boolean;
@@ -11,7 +12,20 @@ export type AuthSession = {
   clientId: string | null;
 };
 
-export async function getAuthSession() {
+let pendingSession: Promise<AuthSession> | null = null;
+
+export function getAuthSession(): Promise<AuthSession> {
+  if (!pendingSession) {
+    // Share Strict Mode/focus checks and serialize cookie rotation across supported browser tabs.
+    const read = Promise.resolve(typeof navigator !== "undefined" && navigator.locks
+      ? navigator.locks.request("syncwatch.auth-session", readAuthSession)
+      : readAuthSession());
+    pendingSession = read.finally(() => { pendingSession = null; });
+  }
+  return pendingSession;
+}
+
+async function readAuthSession(): Promise<AuthSession> {
   const response = await fetch(`${API_URL}/api/auth/session`, {
     credentials: "include"
   });

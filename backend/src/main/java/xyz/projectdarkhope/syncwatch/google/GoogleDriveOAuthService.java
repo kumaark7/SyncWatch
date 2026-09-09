@@ -36,7 +36,7 @@ public class GoogleDriveOAuthService {
             .build();
     private final ObjectMapper objectMapper;
     private final GoogleDriveConnectionRepository connections;
-    private final ConcurrentHashMap<String, Object> refreshLocks = new ConcurrentHashMap<>();
+    private final Object[] refreshLocks = new Object[64];
     private final ConcurrentHashMap<String, String> temporaryConnections = new ConcurrentHashMap<>();
     private final String clientId;
     private final String clientSecret;
@@ -54,6 +54,7 @@ public class GoogleDriveOAuthService {
         this.clientId = clientId.trim();
         this.clientSecret = clientSecret.trim();
         this.frontendOrigin = frontendOrigin.replaceAll("/+$", "");
+        Arrays.setAll(refreshLocks, ignored -> new Object());
     }
 
     public Credentials exchangeAuthorizationCode(String userId, String code, String redirectUri) {
@@ -162,27 +163,35 @@ public class GoogleDriveOAuthService {
             return;
         }
         temporaryConnections.remove(ownerId);
-        refreshLocks.remove(ownerId);
     }
 
     private Credentials refreshForUser(String userId) {
-        synchronized (refreshLocks.computeIfAbsent(userId, ignored -> new Object())) {
-            Credentials refreshed = refresh(storedRefreshToken(userId));
-            saveRefreshToken(userId, refreshed.refreshToken(), isTemporaryOwner(userId));
+        synchronized (refreshLocks[Math.floorMod(userId.hashCode(), refreshLocks.length)]) {
+            String previous = storedEncryptedRefreshToken(userId);
+            Credentials refreshed = refresh(decrypt(previous));
+            String encrypted = encrypt(refreshed.refreshToken());
+            // A disconnect/guest departure must win over an already-running refresh.
+            boolean retained = isTemporaryOwner(userId)
+                    ? temporaryConnections.replace(userId, previous, encrypted)
+                    : connections.replaceIfUnchanged(userId, previous, encrypted);
+            if (!retained) throw new GoogleOAuthException("Google Drive connection changed. Connect again.");
             return refreshed;
         }
     }
 
     private String storedRefreshToken(String userId) {
+        return decrypt(storedEncryptedRefreshToken(userId));
+    }
+
+    private String storedEncryptedRefreshToken(String userId) {
         if (isTemporaryOwner(userId)) {
             String encryptedToken = temporaryConnections.get(userId);
             if (encryptedToken == null) {
                 throw new GoogleOAuthException("Google Drive is not connected");
             }
-            return decrypt(encryptedToken);
+            return encryptedToken;
         }
         return connections.findEncryptedRefreshToken(userId)
-                .map(this::decrypt)
                 .orElseThrow(() -> new GoogleOAuthException("Google Drive is not connected"));
     }
 
@@ -217,10 +226,7 @@ public class GoogleDriveOAuthService {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             JsonNode json = objectMapper.readTree(response.body());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String description = text(json, "error_description");
-                throw new GoogleOAuthException(
-                        description == null ? "Google Drive authorization failed" : description
-                );
+                throw new GoogleOAuthException("Google Drive authorization failed. Connect again.");
             }
             return json;
         } catch (GoogleOAuthException error) {

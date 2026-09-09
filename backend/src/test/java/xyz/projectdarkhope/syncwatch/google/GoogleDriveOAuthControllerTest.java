@@ -135,4 +135,26 @@ class GoogleDriveOAuthControllerTest {
 
         verify(googleOAuth).disconnect("guest:owner");
     }
+
+    @Test
+    void guestDepartureDuringCodeExchangeCannotReturnOrRetainCredentials() {
+        Room room = rooms.create("Guest Room");
+        room.claimHost("guest-client", "guest:owner");
+        room.registerParticipant("guest-client", "guest:owner", "Guest", "session-1");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession().setAttribute(AuthService.SESSION_GUEST_ROOM, room.getId());
+        request.getSession().setAttribute(AuthService.SESSION_CLIENT_ID, "guest-client");
+        request.getSession().setAttribute(AuthService.SESSION_GUEST_ID, "guest:owner");
+        when(auth.isGuestAuthenticated(any())).thenReturn(true);
+        when(googleOAuth.exchangeTemporaryAuthorizationCode("guest:owner", "code", "http://localhost:5173"))
+                .thenAnswer(invocation -> {
+                    room.removeParticipant("guest-client");
+                    return new GoogleDriveOAuthService.Credentials("access", 1234, "refresh");
+                });
+        var result = controller.exchangeCode(new GoogleAuthorizationCodeRequest("code", "http://localhost:5173"),
+                "XmlHttpRequest", request);
+        assertThat(result.getStatusCode().value()).isEqualTo(403);
+        assertThat(result.getBody().toString()).doesNotContain("refresh");
+        verify(googleOAuth).forgetTemporaryConnection("guest:owner");
+    }
 }
