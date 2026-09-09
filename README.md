@@ -97,6 +97,9 @@ Set these in the backend process environment; Spring does not automatically read
 | SYNCWATCH_DATABASE_URL | JDBC URL; default jdbc:h2:file:./syncwatch-users;DB_CLOSE_ON_EXIT=FALSE |
 | SYNCWATCH_DATABASE_USERNAME / SYNCWATCH_DATABASE_PASSWORD | Optional database credentials |
 | SYNCWATCH_FRONTEND_ORIGIN | Override syncwatch.frontend-origin; default http://localhost:5173 |
+| SERVER_FORWARD_HEADERS_STRATEGY | Set to NATIVE behind the trusted production Nginx proxy |
+| SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES | Trusted proxy regex; production uses only loopback Nginx |
+| SERVER_ADDRESS | Production bind address; use 127.0.0.1 behind Nginx |
 
 Enable Google Drive and Picker APIs, authorize the frontend origin for OAuth, and restrict the browser API key appropriately. The app requests `drive.file`. Never place Google or LiveKit secrets in `VITE_` variables.
 
@@ -111,7 +114,9 @@ webhook:
 
 The endpoint validates LiveKit's JWT signature and raw-body hash. Without webhook delivery, immediate permission changes still apply to connected participants, but stale-token reconnect and modified-client publication reconciliation are not complete. Camera/screen permissions and system-audio capture depend on the browser/platform.
 
-H2's default path is relative to the Java working directory. Use a stable absolute database path in production and back it up consistently. Preserve the Google client secret alongside that operational backup: changing it prevents decrypting existing Drive credentials. Keep secrets and database files out of Git.
+H2's default path is relative to the Java working directory. Use a stable absolute database path in production and back it up consistently. Preserve the Google client secret alongside that operational backup: changing it prevents decrypting existing Drive credentials. Keep secrets and database files out of Git. Production database and backup files should be owner-only (`0600`) inside an owner-only directory.
+
+See [deploy/PRODUCTION_SECURITY.md](deploy/PRODUCTION_SECURITY.md) for the trusted-proxy, loopback binding, Nginx header/logging, H2 permission, deployment, and verification steps. The accompanying [Nginx template](deploy/nginx/syncwatch-security.conf.example) intentionally logs `$uri` without query strings or Referer.
 
 ## Keyboard Shortcuts
 
@@ -139,8 +144,8 @@ git diff --check
 
 The frontend build runs TypeScript and Vite; no separate frontend test/lint script exists. OAuth, two-person playback/calls, native screen capture, and mobile layouts also require runtime checks.
 
-Serve `frontend/dist` with SPA fallback and proxy `/api` and `/ws` to Spring. Build with the public API origin in VITE_API_URL; otherwise it defaults to localhost. Configure the exact frontend origin and secure cookies.
+Serve `frontend/dist` with SPA fallback and proxy `/api` and `/ws` to Spring. Build with the public API origin in VITE_API_URL; otherwise it defaults to localhost. Configure the exact frontend origin and secure cookies. In production, Spring should bind to `127.0.0.1:8080` and accept forwarding information only from the loopback Nginx proxy.
 
-STOMP uses 10-second heartbeats, a two-second reconnect delay, and a five-second presence grace. Nginx WebSocket routing needs HTTP/1.1 Upgrade headers; proxy_read_timeout 3600s and proxy_send_timeout 3600s provide additional idle-timeout protection. Deployment configuration is not tracked here.
+STOMP uses 10-second heartbeats, a two-second reconnect delay, and a five-second presence grace. Nginx WebSocket routing needs HTTP/1.1 Upgrade headers; proxy_read_timeout 3600s and proxy_send_timeout 3600s provide additional idle-timeout protection. The tracked Nginx file is a reference template; live deployment configuration and secrets remain operator-managed.
 
 See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) for implementation boundaries and remaining release housekeeping.

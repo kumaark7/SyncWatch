@@ -43,18 +43,25 @@ class RequestRateLimiterTest {
     }
 
     @Test
-    void loginReturns429AndDoesNotTrustForwardedForOrNewSessions() throws Exception {
+    void loginUsesServletRemoteAddressAndIgnoresForwardingHeaders() throws Exception {
         RequestRateLimitFilter filter = new RequestRateLimitFilter(new RequestRateLimiter());
         MockHttpServletResponse response = null;
         for (int i = 0; i < 31; i++) {
             MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/login");
             request.setRemoteAddr("192.0.2.1");
             request.addHeader("X-Forwarded-For", "spoof-" + i);
+            request.addHeader("X-Real-IP", "198.51.100." + i);
             request.getSession(true);
             response = run(filter, request);
             assertThat(response.getStatus()).isEqualTo(i < 30 ? 204 : 429);
         }
         assertThat(response.getHeader("Retry-After")).isEqualTo("300");
+
+        MockHttpServletRequest otherClient = new MockHttpServletRequest("POST", "/api/auth/login");
+        otherClient.setRemoteAddr("192.0.2.2");
+        otherClient.addHeader("X-Forwarded-For", "192.0.2.1");
+        otherClient.addHeader("X-Real-IP", "192.0.2.1");
+        assertThat(run(filter, otherClient).getStatus()).isEqualTo(204);
     }
 
     @Test

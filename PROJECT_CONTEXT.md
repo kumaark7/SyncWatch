@@ -125,7 +125,7 @@ Manual verification should cover account switching, guest invites, refresh, Host
 
 - The private root tooling package retains its existing name, watch-party-mvp; its version is 0.8.0.
 - ISSUES_FACED_AND_FIXES.txt is historical troubleshooting, not the current architecture contract.
-- Deployment/Nginx/systemd configuration is not tracked.
+- Production security deployment guidance and an Nginx reference snippet are tracked under `deploy/`; live Nginx, systemd, environment, and secret files remain operator-managed.
 - Bundle-size warnings and browser runtime verification remain separate work. No optimization or behavior change is implied here.
 
 See README.md for current setup, environment variables, and production cookie/database requirements.
