@@ -127,6 +127,30 @@ public class GoogleDriveOAuthService {
         }
     }
 
+    public String refreshAccessTokenAfterRejection(Room room, String rejectedAccessToken) {
+        synchronized (room) {
+            String ownerUserId = room.getDriveOwnerUserId();
+            requireUserId(ownerUserId);
+            storedRefreshToken(ownerUserId);
+
+            String currentAccessToken = room.getAccessToken();
+            if (currentAccessToken != null
+                    && !currentAccessToken.isBlank()
+                    && !currentAccessToken.equals(rejectedAccessToken)
+                    && room.getAccessTokenExpiresAt() > System.currentTimeMillis()) {
+                return currentAccessToken;
+            }
+
+            Credentials refreshed = refreshForUser(ownerUserId);
+            room.setDriveCredentials(
+                    ownerUserId,
+                    refreshed.accessToken(),
+                    refreshed.expiresAt()
+            );
+            return refreshed.accessToken();
+        }
+    }
+
     public void disconnect(String userId) {
         requireUserId(userId);
         boolean temporary = isTemporaryOwner(userId);

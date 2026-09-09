@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class Room {
@@ -28,6 +29,7 @@ public class Room {
     private volatile double currentTime;
     private volatile long updatedAt;
     private volatile long seekVersion;
+    private volatile long mediaVersion;
     private final Map<String, String> participantNames = new LinkedHashMap<>();
     private final Map<String, String> participantUserIds = new LinkedHashMap<>();
     private final Map<String, Set<String>> sessionsByClientId = new LinkedHashMap<>();
@@ -41,7 +43,11 @@ public class Room {
     public String getId() { return id; }
     public String getName() { return name; }
     public String getFileId() { return fileId; }
-    public void setFileId(String v) { fileId = v; }
+    public synchronized void setFileId(String v) {
+        boolean changed = !Objects.equals(fileId, v);
+        fileId = v;
+        if (changed) mediaVersion++;
+    }
     public String getFileName() { return fileName; }
     public void setFileName(String v) { fileName = v; }
     public String getAccessToken() { return accessToken; }
@@ -52,6 +58,7 @@ public class Room {
     public boolean isGuestScreenSharingAllowed() { return guestScreenSharingAllowed; }
     public boolean isPlaying() { return playing; }
     public long getSeekVersion() { return seekVersion; }
+    public long getMediaVersion() { return mediaVersion; }
     public boolean hasFile() { return fileId != null && !fileId.isBlank(); }
     public boolean hasHost() { return hostClientId != null && !hostClientId.isBlank(); }
     public boolean isHost(String clientId) {
@@ -153,11 +160,13 @@ public class Room {
     }
 
     public synchronized void clearFile() {
+        boolean changed = fileId != null && !fileId.isBlank();
         fileId = null;
         fileName = null;
         accessToken = null;
         accessTokenExpiresAt = 0;
         driveOwnerUserId = null;
+        if (changed) mediaVersion++;
         resetPlayback();
     }
 

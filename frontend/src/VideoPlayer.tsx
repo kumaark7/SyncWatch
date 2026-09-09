@@ -9,12 +9,21 @@ import { RotateCcw, RotateCw } from "lucide-react";
 import { API_URL } from "./api";
 import GestureControl from "./gesture/GestureControl";
 import type { GesturePlaybackAction } from "./gesture/useGesturePlaybackControl";
+import {
+  isNewSeekEvent,
+  isExpectedRemoteSeek,
+  isStaleAgainstSeek,
+  mediaSourceIdentity,
+  safeLocalControlTime,
+  shouldApplyAuthoritativeTime
+} from "./playbackSync";
 import type { SyncEvent } from "./types";
 
 type Props = {
   roomId: string;
   hasFile: boolean;
   fileName: string | null;
+  mediaVersion: number;
   initialTime: number;
   initialPlaying: boolean;
   syncEvent: SyncEvent | null;
@@ -56,12 +65,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteUntil = useRef(0);
   const applyingRemoteRef = useRef(false);
+  const remoteSeekPendingRef = useRef(false);
+  const remoteSeekTargetRef = useRef<number | null>(null);
+  const mediaRecoveringRef = useRef(false);
+  const mediaUnavailableRef = useRef(false);
+  const lastStableTimeRef = useRef(0);
+  const pendingSyncEventRef = useRef<SyncEvent | null>(null);
   const authoritativePlayingRef = useRef(
     props.initialPlaying
   );
   const lastAppliedSeekIdRef = useRef(0);
+  const authoritativeZeroSeekIdRef = useRef<number | null>(null);
   const localPausedSeekRef = useRef(false);
-  const localPausedSeekTimer = useRef<number | null>(null);
   const remoteApplyTimer = useRef<number | null>(null);
   const rateTimer = useRef<number | null>(null);
   const overlayTimer = useRef<number | null>(null);
@@ -85,7 +100,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     Date.now() < remoteUntil.current;
 
   const isApplyingRemote = () =>
-    applyingRemoteRef.current || isRemote();
+    remoteSeekPendingRef.current || applyingRemoteRef.current || isRemote();
 
   const beginRemoteApply = (
     durationMs = 2000
@@ -106,6 +121,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     }, durationMs);
   };
 
+  const endRemoteApply = () => {
+    applyingRemoteRef.current = false;
+    remoteUntil.current = 0;
+    if (remoteApplyTimer.current !== null) {
+      window.clearTimeout(remoteApplyTimer.current);
+      remoteApplyTimer.current = null;
+    }
+  };
+
   const enforceAuthoritativePause = (
     video: HTMLVideoElement
   ) => {
@@ -123,25 +147,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   };
 
   const clearLocalPausedSeek = () => {
-    if (localPausedSeekTimer.current !== null) {
-      window.clearTimeout(localPausedSeekTimer.current);
-      localPausedSeekTimer.current = null;
-    }
-
     localPausedSeekRef.current = false;
   };
 
   const markLocalPausedSeek = () => {
     localPausedSeekRef.current = true;
-
-    if (localPausedSeekTimer.current !== null) {
-      window.clearTimeout(localPausedSeekTimer.current);
-    }
-
-    localPausedSeekTimer.current = window.setTimeout(() => {
-      localPausedSeekRef.current = false;
-      localPausedSeekTimer.current = null;
-    }, 1500);
   };
 
   const clearRateTimer = () => {
@@ -206,6 +216,53 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     }, 2400);
   };
 
+  const mediaDiagnostic = (
+    event: string,
+    details: Record<string, string | number | boolean | null> = {}
+  ) => {
+    console.info("[SyncWatch media]", {
+      event,
+      mediaVersion: props.mediaVersion,
+      ...details
+    });
+  };
+
+  const localControlTime = (
+    video: HTMLVideoElement,
+    control: "PLAY" | "PAUSE" | "SEEK"
+  ) => {
+    const time = safeLocalControlTime(
+      video.currentTime,
+      lastStableTimeRef.current,
+      mediaUnavailableRef.current,
+      video.readyState
+    );
+
+    if (time === null) {
+      mediaDiagnostic("local-control-suppressed", {
+        control,
+        readyState: video.readyState,
+        networkState: video.networkState
+      });
+    }
+
+    return time;
+  };
+
+  const applyRemoteTime = (
+    video: HTMLVideoElement,
+    target: number,
+    reason: string
+  ) => {
+    remoteSeekPendingRef.current = true;
+    remoteSeekTargetRef.current = target;
+    mediaRecoveringRef.current = true;
+    video.currentTime = target;
+    mediaDiagnostic(reason, {
+      target: Math.round(target * 1000) / 1000
+    });
+  };
+
   const requestSynchronizedSeek = (
     offsetSeconds: number
   ) => {
@@ -215,9 +272,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       return;
     }
 
-    const currentTime = Number.isFinite(video.currentTime)
-      ? video.currentTime
-      : 0;
+    if (!Number.isFinite(video.currentTime)) {
+      return;
+    }
+
+    const currentTime = video.currentTime;
 
     const target = Math.min(
       video.duration,
@@ -229,6 +288,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     }
 
     resetRate(video);
+    mediaDiagnostic("local-seek-request", {
+      from: Math.round(currentTime * 1000) / 1000,
+      target: Math.round(target * 1000) / 1000
+    });
 
     /*
      * Use the native seek lifecycle so onSeeked sends the same
@@ -285,7 +348,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       resetRate(video);
       video.pause();
       authoritativePlayingRef.current = false;
-      props.onControl("PAUSE", video.currentTime, false);
+      const controlTime = safeLocalControlTime(
+        video.currentTime,
+        lastStableTimeRef.current,
+        mediaUnavailableRef.current,
+        video.readyState
+      );
+      if (controlTime !== null) {
+        props.onControl("PAUSE", controlTime, false);
+      }
     },
     seekBy: requestSynchronizedSeek,
     changeVolumeBy: (offset) => {
@@ -333,11 +404,246 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     }
   };
 
+  const applyPlaybackEvent = (
+    video: HTMLVideoElement,
+    event: SyncEvent
+  ) => {
+    if (
+      event.type !== "PLAY" &&
+      event.type !== "PAUSE" &&
+      event.type !== "SEEK" &&
+      event.type !== "STATE"
+    ) {
+      return;
+    }
+
+    if (!Number.isFinite(event.time)) {
+      mediaDiagnostic("invalid-sync-time", { type: event.type });
+      return;
+    }
+
+    const seekAdvanced = typeof event.seekId === "number" &&
+      event.seekId > lastAppliedSeekIdRef.current;
+
+    if (event.type === "SEEK") {
+      if (!isNewSeekEvent(event.seekId, lastAppliedSeekIdRef.current)) {
+        mediaDiagnostic("stale-seek-ignored", {
+          seekId: event.seekId ?? -1,
+          lastSeekId: lastAppliedSeekIdRef.current
+        });
+        return;
+      }
+    } else if (isStaleAgainstSeek(event.seekId, lastAppliedSeekIdRef.current)) {
+      mediaDiagnostic("stale-sync-event-ignored", {
+        type: event.type,
+        seekId: event.seekId ?? -1,
+        lastSeekId: lastAppliedSeekIdRef.current
+      });
+      return;
+    }
+
+    if (typeof event.seekId === "number") {
+      if (seekAdvanced) {
+        authoritativeZeroSeekIdRef.current = event.time <= 0.05
+          ? event.seekId
+          : null;
+      }
+
+      lastAppliedSeekIdRef.current = Math.max(
+        lastAppliedSeekIdRef.current,
+        event.seekId
+      );
+    }
+
+    authoritativePlayingRef.current = event.playing;
+    const ownEvent = Boolean(event.senderClientId) &&
+      event.senderClientId === props.clientId;
+    const eventWasFromHost = Boolean(event.hostClientId) &&
+      event.senderClientId === event.hostClientId;
+    const target = targetTime(event);
+    const drift = target - video.currentTime;
+    const absDrift = Math.abs(drift);
+    const allowAuthoritativeZero = event.type === "SEEK" ||
+      (typeof event.seekId === "number" &&
+        event.seekId === authoritativeZeroSeekIdRef.current);
+
+    if (event.type === "SEEK") {
+      pendingSyncEventRef.current = null;
+      beginRemoteApply(2500);
+
+      if (!ownEvent) {
+        showTimedOverlay(
+          eventWasFromHost ? "host-sync" : "guest-sync",
+          1100
+        );
+      }
+
+      resetRate(video);
+      const minimumDrift = ownEvent ? 0.5 : 0.05;
+      if (shouldApplyAuthoritativeTime(
+        "SEEK",
+        video.currentTime,
+        target,
+        lastStableTimeRef.current,
+        mediaRecoveringRef.current,
+        minimumDrift
+      )) {
+        applyRemoteTime(video, target, "remote-seek-applied");
+      }
+
+      hasAlignedPlayback.current = true;
+      if (event.playing) {
+        if (video.paused) void tryRemotePlay(video);
+      } else {
+        setNeedsPlaybackStart(false);
+        if (!video.paused) video.pause();
+      }
+      return;
+    }
+
+    if (mediaRecoveringRef.current || video.seeking) {
+      pendingSyncEventRef.current = event;
+      resetRate(video);
+      mediaDiagnostic("sync-correction-deferred", { type: event.type });
+
+      if (!event.playing) {
+        setNeedsPlaybackStart(false);
+        if (!video.paused) {
+          beginRemoteApply(1500);
+          video.pause();
+        }
+      } else if (video.paused) {
+        beginRemoteApply(2000);
+        void tryRemotePlay(video);
+      }
+      return;
+    }
+
+    pendingSyncEventRef.current = null;
+
+    if (event.type === "PAUSE") {
+      beginRemoteApply(1500);
+      resetRate(video);
+      if (shouldApplyAuthoritativeTime(
+        "PAUSE",
+        video.currentTime,
+        target,
+        lastStableTimeRef.current,
+        false,
+        0.15,
+        allowAuthoritativeZero
+      )) {
+        applyRemoteTime(video, target, "pause-alignment-seek-applied");
+      }
+      showTimedOverlay(
+        eventWasFromHost ? "host-paused" : "guest-paused",
+        1600
+      );
+      setNeedsPlaybackStart(false);
+      if (!video.paused) video.pause();
+      return;
+    }
+
+    if (event.type === "PLAY") {
+      beginRemoteApply(2000);
+      resetRate(video);
+      if (shouldApplyAuthoritativeTime(
+        "PLAY",
+        video.currentTime,
+        target,
+        lastStableTimeRef.current,
+        false,
+        0.5,
+        allowAuthoritativeZero
+      )) {
+        applyRemoteTime(video, target, "play-alignment-seek-applied");
+      }
+      hasAlignedPlayback.current = true;
+      if (video.paused) void tryRemotePlay(video);
+      return;
+    }
+
+    if (!event.playing) {
+      resetRate(video);
+      if (shouldApplyAuthoritativeTime(
+        "STATE",
+        video.currentTime,
+        target,
+        lastStableTimeRef.current,
+        false,
+        IGNORE_DRIFT,
+        allowAuthoritativeZero
+      )) {
+        beginRemoteApply(2000);
+        applyRemoteTime(video, target, "paused-state-alignment-seek-applied");
+      }
+      setNeedsPlaybackStart(false);
+      if (!video.paused) {
+        beginRemoteApply(1500);
+        video.pause();
+      }
+      return;
+    }
+
+    if (video.paused) {
+      beginRemoteApply(2000);
+      resetRate(video);
+      void tryRemotePlay(video);
+      return;
+    }
+
+    if (absDrift <= IGNORE_DRIFT) {
+      resetRate(video);
+      return;
+    }
+
+    if (absDrift <= HARD_SEEK_DRIFT) {
+      video.playbackRate = drift > 0 ? FAST_RATE : SLOW_RATE;
+      scheduleRateReset(video);
+      return;
+    }
+
+    if (
+      drift > 0 &&
+      hasAlignedPlayback.current &&
+      absDrift <= MAX_SOFT_CATCH_UP_DRIFT
+    ) {
+      video.playbackRate = CATCH_UP_RATE;
+      scheduleRateReset(video);
+      return;
+    }
+
+    if (shouldApplyAuthoritativeTime(
+      "STATE",
+      video.currentTime,
+      target,
+      lastStableTimeRef.current,
+      false,
+      HARD_SEEK_DRIFT,
+      allowAuthoritativeZero
+    )) {
+      resetRate(video);
+      beginRemoteApply(2500);
+      applyRemoteTime(video, target, "state-hard-seek-applied");
+      hasAlignedPlayback.current = true;
+    }
+  };
+
+  const reconcilePendingSync = (video: HTMLVideoElement) => {
+    if (mediaRecoveringRef.current || video.seeking) return;
+    const pending = pendingSyncEventRef.current;
+    pendingSyncEventRef.current = null;
+    if (pending) applyPlaybackEvent(video, pending);
+  };
+
   useEffect(() => {
     return () => {
       if (remoteApplyTimer.current !== null) {
         window.clearTimeout(remoteApplyTimer.current);
       }
+
+      remoteSeekPendingRef.current = false;
+      remoteSeekTargetRef.current = null;
 
       clearLocalPausedSeek();
 
@@ -363,186 +669,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       return;
     }
 
-    const ownEvent =
-      Boolean(event.senderClientId) &&
-      event.senderClientId === props.clientId;
-
-    const eventWasFromHost =
-      Boolean(event.hostClientId) &&
-      event.senderClientId === event.hostClientId;
-
-    const target = targetTime(event);
-    const drift =
-      target - video.currentTime;
-
-    const absDrift =
-      Math.abs(drift);
-
-    if (
-      event.type === "PLAY" ||
-      event.type === "PAUSE" ||
-      event.type === "SEEK" ||
-      event.type === "STATE"
-    ) {
-      authoritativePlayingRef.current =
-        event.playing;
-    }
-
-    if (event.type === "SEEK") {
-      if (
-        typeof event.seekId === "number" &&
-        event.seekId < lastAppliedSeekIdRef.current
-      ) {
-        return;
-      }
-
-      if (typeof event.seekId === "number") {
-        lastAppliedSeekIdRef.current = event.seekId;
-      }
-
-      beginRemoteApply(2500);
-
-      /*
-       * The browser that initiated the seek has already moved
-       * its own video. Do not label its echoed event as remote.
-       */
-      if (!ownEvent) {
-        showTimedOverlay(
-          eventWasFromHost
-            ? "host-sync"
-            : "guest-sync",
-          1100
-        );
-      }
-
-      resetRate(video);
-
-      /*
-       * Receiver: always follow the authoritative seek.
-       * Sender: only adjust if the echoed server time is meaningfully
-       * different from where the browser already landed.
-       */
-      if (
-        !ownEvent ||
-        absDrift > 0.5
-      ) {
-        video.currentTime = target;
-      }
-
-      hasAlignedPlayback.current = true;
-
-      if (event.playing) {
-        if (video.paused) {
-          void tryRemotePlay(video);
-        }
-      } else {
-        setNeedsPlaybackStart(false);
-
-        if (!video.paused) {
-          video.pause();
-        }
-      }
-
-      return;
-    }
-
-    if (event.type === "PAUSE") {
-      beginRemoteApply(1500);
-      resetRate(video);
-
-      if (absDrift > 0.15) {
-        video.currentTime = target;
-      }
-
-      showTimedOverlay(
-        eventWasFromHost
-          ? "host-paused"
-          : "guest-paused",
-        1600
-      );
-
-      setNeedsPlaybackStart(false);
-
-      if (!video.paused) {
-        video.pause();
-      }
-
-      return;
-    }
-
-    if (event.type === "PLAY") {
-      beginRemoteApply(2000);
-      resetRate(video);
-
-      if (absDrift > 0.5) {
-        video.currentTime = target;
-      }
-
-      hasAlignedPlayback.current = true;
-
-      if (video.paused) {
-        void tryRemotePlay(video);
-      }
-
-      return;
-    }
-
-    if (event.type === "STATE") {
-      if (!event.playing) {
-        resetRate(video);
-
-        if (absDrift > IGNORE_DRIFT) {
-          beginRemoteApply(2000);
-          video.currentTime = target;
-        }
-
-        setNeedsPlaybackStart(false);
-
-        if (!video.paused) {
-          beginRemoteApply(1500);
-          video.pause();
-        }
-
-        return;
-      }
-
-      if (video.paused) {
-        beginRemoteApply(2000);
-        resetRate(video);
-        void tryRemotePlay(video);
-        return;
-      }
-
-      if (absDrift <= IGNORE_DRIFT) {
-        resetRate(video);
-        return;
-      }
-
-      if (absDrift <= HARD_SEEK_DRIFT) {
-        video.playbackRate =
-          drift > 0
-            ? FAST_RATE
-            : SLOW_RATE;
-
-        scheduleRateReset(video);
-        return;
-      }
-
-      if (
-        drift > 0 &&
-        hasAlignedPlayback.current &&
-        absDrift <= MAX_SOFT_CATCH_UP_DRIFT
-      ) {
-        video.playbackRate = CATCH_UP_RATE;
-        scheduleRateReset(video);
-        return;
-      }
-
-      resetRate(video);
-      beginRemoteApply(2500);
-      video.currentTime = target;
-      hasAlignedPlayback.current = true;
-    }
+    applyPlaybackEvent(video, event);
   }, [
     props.syncEvent,
     props.hasFile,
@@ -554,29 +681,37 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       props.initialPlaying;
   }, [
     props.initialPlaying,
-    props.fileName
+    props.mediaVersion
   ]);
 
   useEffect(() => {
     setMediaDuration(null);
+    mediaUnavailableRef.current = false;
+    mediaRecoveringRef.current = false;
+    remoteSeekPendingRef.current = false;
+    remoteSeekTargetRef.current = null;
+    pendingSyncEventRef.current = null;
+    lastStableTimeRef.current = 0;
+    hasAlignedPlayback.current = false;
+    applyingRemoteRef.current = false;
+    remoteUntil.current = 0;
+    lastAppliedSeekIdRef.current = 0;
+    authoritativeZeroSeekIdRef.current = null;
+    clearLocalPausedSeek();
+
+    if (remoteApplyTimer.current !== null) {
+      window.clearTimeout(remoteApplyTimer.current);
+      remoteApplyTimer.current = null;
+    }
 
     if (!props.hasFile) {
       setNeedsPlaybackStart(false);
       setOverlayMode("none");
-      hasAlignedPlayback.current = false;
-      applyingRemoteRef.current = false;
       authoritativePlayingRef.current = false;
-      lastAppliedSeekIdRef.current = 0;
-      clearLocalPausedSeek();
-
-      if (remoteApplyTimer.current !== null) {
-        window.clearTimeout(remoteApplyTimer.current);
-        remoteApplyTimer.current = null;
-      }
     }
   }, [
     props.hasFile,
-    props.fileName
+    props.mediaVersion
   ]);
 
   if (!props.hasFile) {
@@ -604,7 +739,25 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       ? "Host paused"
       : overlayMode === "guest-paused"
       ? "Guest paused"
-      : "Buffering...";
+       : "Buffering...";
+
+  const sourceIdentity = mediaSourceIdentity(
+    props.roomId,
+    props.mediaVersion
+  );
+
+  const finishRecovery = (video: HTMLVideoElement) => {
+    mediaUnavailableRef.current = false;
+    if (video.seeking) return;
+
+    remoteSeekPendingRef.current = false;
+    mediaRecoveringRef.current = false;
+    clearLocalPausedSeek();
+    if (overlayMode === "buffering") {
+      setOverlayMode("none");
+    }
+    reconcilePendingSync(video);
+  };
 
   return (
     <div
@@ -613,10 +766,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       onPointerDown={revealSeekControls}
     >
       <video
-        key={`${props.roomId}:${props.fileName ?? ""}`}
+        key={sourceIdentity}
         ref={videoRef}
         className="video"
-        src={`${API_URL}/api/stream/${props.roomId}`}
+        src={`${API_URL}/api/stream/${props.roomId}?media=${props.mediaVersion}`}
         controls
         playsInline
         preload="auto"
@@ -625,8 +778,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           const video =
             event.currentTarget;
 
-          beginRemoteApply(2000);
+          mediaUnavailableRef.current = false;
+          mediaRecoveringRef.current = false;
           resetRate(video);
+          mediaDiagnostic("media-metadata-loaded", {
+            duration: Number.isFinite(video.duration)
+              ? Math.round(video.duration * 1000) / 1000
+              : null
+          });
           setMediaDuration(
             Number.isFinite(video.duration)
               ? video.duration
@@ -636,13 +795,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           if (
             props.initialTime > 0
           ) {
-            video.currentTime =
-              props.initialTime;
+            beginRemoteApply(2500);
+            applyRemoteTime(video, props.initialTime, "initial-state-seek-applied");
           }
 
           if (
             props.initialPlaying
           ) {
+            beginRemoteApply(2000);
             void tryRemotePlay(
               video
             );
@@ -653,11 +813,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
 
         onDurationChange={(event) => {
           const duration = event.currentTarget.duration;
-          setMediaDuration(
-            Number.isFinite(duration)
-              ? duration
-              : null
-          );
+          if (Number.isFinite(duration) && duration > 0) {
+            setMediaDuration(duration);
+          }
         }}
 
         onPlay={(event) => {
@@ -680,11 +838,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           clearLocalPausedSeek();
           authoritativePlayingRef.current = true;
 
-          props.onControl(
-            "PLAY",
-            video.currentTime,
-            true
-          );
+          const controlTime = localControlTime(video, "PLAY");
+          if (controlTime !== null) {
+            props.onControl("PLAY", controlTime, true);
+          }
         }}
 
         onPause={(event) => {
@@ -702,17 +859,31 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           clearLocalPausedSeek();
           authoritativePlayingRef.current = false;
 
-          props.onControl(
-            "PAUSE",
-            video.currentTime,
-            false
-          );
+          const controlTime = localControlTime(video, "PAUSE");
+          if (controlTime !== null) {
+            props.onControl("PAUSE", controlTime, false);
+          }
         }}
 
-        onSeeking={() => {
-          if (isApplyingRemote()) {
+        onSeeking={(event) => {
+          const video = event.currentTarget;
+          const expectedRemoteSeek = isExpectedRemoteSeek(
+            video.currentTime,
+            remoteSeekTargetRef.current
+          );
+          mediaRecoveringRef.current = true;
+          mediaDiagnostic(
+            expectedRemoteSeek ? "remote-seek-buffering" : "local-seek-buffering",
+            { target: Math.round(video.currentTime * 1000) / 1000 }
+          );
+
+          if (expectedRemoteSeek) {
             return;
           }
+
+          remoteSeekPendingRef.current = false;
+          remoteSeekTargetRef.current = null;
+          endRemoteApply();
 
           if (!authoritativePlayingRef.current) {
             markLocalPausedSeek();
@@ -727,21 +898,53 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         }}
 
         onSeeked={(event) => {
-          if (isApplyingRemote()) return;
-
           const video =
             event.currentTarget;
 
           resetRate(video);
+          if (Number.isFinite(video.currentTime)) {
+            lastStableTimeRef.current = Math.max(0, video.currentTime);
+          }
+
+          const completedRemoteSeek = isExpectedRemoteSeek(
+            video.currentTime,
+            remoteSeekTargetRef.current
+          );
+          if (completedRemoteSeek) {
+            remoteSeekPendingRef.current = false;
+            remoteSeekTargetRef.current = null;
+            mediaRecoveringRef.current = video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
+            mediaDiagnostic("remote-seek-completed", {
+              time: Math.round(video.currentTime * 1000) / 1000,
+              readyState: video.readyState
+            });
+            if (!mediaRecoveringRef.current) {
+              reconcilePendingSync(video);
+            }
+            enforceAuthoritativePause(video);
+            return;
+          }
+
+          remoteSeekPendingRef.current = false;
+          remoteSeekTargetRef.current = null;
+          if (isApplyingRemote()) return;
 
           const shouldPlay =
             authoritativePlayingRef.current;
+          clearLocalPausedSeek();
 
-          props.onControl(
-            "SEEK",
-            video.currentTime,
-            shouldPlay
-          );
+          const controlTime = localControlTime(video, "SEEK");
+          if (controlTime !== null) {
+            props.onControl("SEEK", controlTime, shouldPlay);
+            mediaDiagnostic("local-seek-completed", {
+              time: Math.round(controlTime * 1000) / 1000
+            });
+          }
+
+          mediaRecoveringRef.current = video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
+          if (!mediaRecoveringRef.current) {
+            reconcilePendingSync(video);
+          }
 
           if (!shouldPlay && !video.paused) {
             beginRemoteApply(1200);
@@ -750,6 +953,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         }}
 
         onWaiting={(event) => {
+          mediaRecoveringRef.current = true;
+          mediaDiagnostic("media-waiting", {
+            time: Number.isFinite(event.currentTarget.currentTime)
+              ? Math.round(event.currentTarget.currentTime * 1000) / 1000
+              : null,
+            readyState: event.currentTarget.readyState
+          });
           enforceAuthoritativePause(
             event.currentTarget
           );
@@ -760,7 +970,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           );
         }}
 
-        onStalled={() => {
+        onStalled={(event) => {
+          mediaRecoveringRef.current = true;
+          mediaDiagnostic("media-stalled", {
+            time: Number.isFinite(event.currentTarget.currentTime)
+              ? Math.round(event.currentTarget.currentTime * 1000) / 1000
+              : null,
+            readyState: event.currentTarget.readyState
+          });
           clearOverlayTimer();
           setOverlayMode(
             "buffering"
@@ -771,36 +988,61 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           enforceAuthoritativePause(
             event.currentTarget
           );
-
-          if (
-            overlayMode ===
-            "buffering"
-          ) {
-            setOverlayMode(
-              "none"
-            );
-          }
+          finishRecovery(event.currentTarget);
         }}
 
         onPlaying={(event) => {
           enforceAuthoritativePause(
             event.currentTarget
           );
-
-          if (
-            overlayMode ===
-            "buffering"
-          ) {
-            setOverlayMode(
-              "none"
-            );
-          }
+          finishRecovery(event.currentTarget);
         }}
 
         onTimeUpdate={(event) => {
-          enforceAuthoritativePause(
-            event.currentTarget
-          );
+          const video = event.currentTarget;
+          if (
+            Number.isFinite(video.currentTime) &&
+            video.currentTime > 0.05 &&
+            video.readyState > HTMLMediaElement.HAVE_NOTHING
+          ) {
+            lastStableTimeRef.current = video.currentTime;
+          }
+          enforceAuthoritativePause(video);
+        }}
+
+        onLoadStart={() => {
+          mediaDiagnostic("media-load-start");
+        }}
+
+        onEmptied={(event) => {
+          mediaUnavailableRef.current = true;
+          mediaRecoveringRef.current = false;
+          remoteSeekPendingRef.current = false;
+          remoteSeekTargetRef.current = null;
+          pendingSyncEventRef.current = null;
+          endRemoteApply();
+          clearLocalPausedSeek();
+          mediaDiagnostic("media-emptied", {
+            networkState: event.currentTarget.networkState
+          });
+        }}
+
+        onError={(event) => {
+          const video = event.currentTarget;
+          mediaUnavailableRef.current = true;
+          mediaRecoveringRef.current = false;
+          remoteSeekPendingRef.current = false;
+          remoteSeekTargetRef.current = null;
+          pendingSyncEventRef.current = null;
+          endRemoteApply();
+          clearLocalPausedSeek();
+          clearOverlayTimer();
+          setOverlayMode("buffering");
+          mediaDiagnostic("media-error", {
+            code: video.error?.code ?? null,
+            readyState: video.readyState,
+            networkState: video.networkState
+          });
         }}
       />
 
@@ -881,14 +1123,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                   ) >
                   IGNORE_DRIFT
                 ) {
-                  video.currentTime =
-                    target;
+                  applyRemoteTime(video, target, "autoplay-recovery-seek-applied");
                 }
               } else if (
                 props.initialTime > 0
               ) {
-                video.currentTime =
-                  props.initialTime;
+                applyRemoteTime(video, props.initialTime, "initial-state-seek-applied");
               }
 
               try {

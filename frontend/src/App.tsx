@@ -22,6 +22,7 @@ import useFullscreenState from "./party/call/useFullscreenState";
 import type { PartyTab } from "./party/types";
 import RoomKeyboardShortcuts from "./RoomKeyboardShortcuts";
 import VideoPlayer, { type VideoPlayerHandle } from "./VideoPlayer";
+import { isTimedSyncEventType, protectedAuthoritativeTime } from "./playbackSync";
 import { ROOM_CLIENT_ID_STORAGE_KEY, useRoomSocket } from "./useRoomSocket";
 import type { Participant, RoomState } from "./types";
 import "./style.css";
@@ -477,6 +478,8 @@ function AuthenticatedApp({
           playing: false,
           currentTime: 0,
           serverTime: lastEvent.serverTime,
+          seekId: lastEvent.seekId ?? previous.seekId,
+          mediaVersion: lastEvent.mediaVersion,
           hostAssigned: true,
           isHost,
           screenSharerClientId: lastEvent.screenSharerClientId ?? null,
@@ -496,6 +499,8 @@ function AuthenticatedApp({
           playing: false,
           currentTime: 0,
           serverTime: lastEvent.serverTime,
+          seekId: lastEvent.seekId ?? previous.seekId,
+          mediaVersion: lastEvent.mediaVersion,
           hostAssigned: Boolean(eventHost) || previous.hostAssigned,
           isHost: eventHost ? isHost : previous.isHost,
           screenSharerClientId: lastEvent.screenSharerClientId ?? null,
@@ -505,11 +510,26 @@ function AuthenticatedApp({
         };
       }
 
+      if (!isTimedSyncEventType(lastEvent.type)) {
+        return previous;
+      }
+
+      const eventSeekId = lastEvent.seekId ?? previous.seekId;
+      const authoritativeSeekAdvanced = eventSeekId > previous.seekId;
+
       return {
         ...previous,
         playing: lastEvent.playing,
-        currentTime: lastEvent.time,
+        currentTime: protectedAuthoritativeTime(
+          lastEvent.type,
+          lastEvent.time,
+          previous.currentTime,
+          previous.hasFile,
+          authoritativeSeekAdvanced
+        ),
         serverTime: lastEvent.serverTime,
+        seekId: Math.max(previous.seekId, eventSeekId),
+        mediaVersion: lastEvent.mediaVersion,
         hostAssigned: Boolean(eventHost) || previous.hostAssigned,
         isHost: eventHost ? isHost : previous.isHost,
         screenSharerClientId: lastEvent.screenSharerClientId ?? null,
@@ -1299,6 +1319,7 @@ function AuthenticatedApp({
                     roomId={roomId}
                     hasFile={room.hasFile}
                     fileName={room.fileName}
+                    mediaVersion={room.mediaVersion}
                     initialTime={room.currentTime}
                     initialPlaying={room.playing}
                     syncEvent={lastEvent?.type === "PARTICIPANTS"

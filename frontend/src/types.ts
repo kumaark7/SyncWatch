@@ -6,6 +6,8 @@ export type RoomState = {
   playing: boolean;
   currentTime: number;
   serverTime: number;
+  seekId: number;
+  mediaVersion: number;
   hostAssigned: boolean;
   isHost: boolean;
   screenSharerClientId: string | null;
@@ -28,6 +30,7 @@ export type SyncEvent = {
   playing: boolean;
   fileName?: string | null;
   serverTime: number;
+  mediaVersion: number;
   senderClientId?: string | null;
   hostClientId?: string | null;
   seekId?: number | null;

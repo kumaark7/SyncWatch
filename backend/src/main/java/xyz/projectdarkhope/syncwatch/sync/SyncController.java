@@ -5,6 +5,8 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
@@ -17,6 +19,9 @@ import java.util.Map;
 
 @Controller
 public class SyncController {
+    private static final Logger logger = LoggerFactory.getLogger(SyncController.class);
+    private static final double ZERO_RESET_THRESHOLD_SECONDS = 0.05;
+    private static final double ESTABLISHED_POSITION_SECONDS = 1.0;
 
     private final RoomStore rooms;
     private final SimpMessagingTemplate messaging;
@@ -137,11 +142,25 @@ public class SyncController {
             default -> room.isPlaying();
         };
 
-        if ("SEEK".equals(type)) {
-            room.updateSeek(message.time(), playing);
-        } else {
-            room.updatePlayback(message.time(), playing);
+        double effectiveTime = message.time();
+        if (!"SEEK".equals(type)
+                && effectiveTime <= ZERO_RESET_THRESHOLD_SECONDS
+                && room.hasFile()) {
+            double authoritativeTime = room.getCurrentTime();
+            if (authoritativeTime > ESTABLISHED_POSITION_SECONDS) {
+                effectiveTime = authoritativeTime;
+                logger.info("Protected nonzero playback position from a zero {} control", type);
+            }
         }
+
+        if ("SEEK".equals(type)) {
+            room.updateSeek(effectiveTime, playing);
+        } else {
+            room.updatePlayback(effectiveTime, playing);
+        }
+
+        logger.info("Applied synchronized playback control; type={}; time={}; playing={}; seekId={}",
+                type, room.getCurrentTime(), room.isPlaying(), room.getSeekVersion());
 
         messaging.convertAndSend(
                 "/topic/room/" + room.getId(),

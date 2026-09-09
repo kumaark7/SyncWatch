@@ -22,6 +22,8 @@ SERVER_ADDRESS=127.0.0.1
 
 Apply the Nginx directives from `deploy/nginx/syncwatch-security.conf.example`. In this single-proxy topology, `$remote_addr` is the client address observed by Nginx. Overwriting `X-Forwarded-For` prevents a caller-provided chain from becoming trusted input. Spring's native Tomcat forwarding support then derives the servlet-effective `request.getRemoteAddr()`, which remains the only address consumed by `RequestRateLimitFilter`.
 
+The dedicated `location ^~ /api/stream/` block must remain above the generic `/api/` proxy. It forwards browser `Range` and `If-Range` headers unchanged, disables response/request buffering, and allows long-running original-quality media responses without caching private Drive content.
+
 ## 2. H2 permissions
 
 Keep the database directory owner-only and tighten existing database/backup files without deleting or rewriting them:

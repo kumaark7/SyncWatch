@@ -128,6 +128,7 @@ test("transient reconnect re-subscribes and JOINs with the same identity", () =>
   client.connect();
   assert.equal(client.subscriptions.length, 2);
   assert.equal(client.published.length, 2);
+  assert.equal(h.render().lastEvent.time, 150);
   for (const frame of client.published) {
     assert.equal(JSON.parse(frame.body).type, "JOIN");
     assert.equal(JSON.parse(frame.body).clientId, "stable-client");
