@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitAdminException;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomParticipant;
@@ -54,6 +56,7 @@ public class RoomPresenceService {
     private final TaskScheduler scheduler;
     private final Duration gracePeriod;
     private final GoogleDriveOAuthService googleOAuth;
+    private final LiveKitScreenShareAuthorizer liveKitScreenShare;
     private final Object pendingLock = new Object();
     private final Map<PresenceKey, PendingDeparture> pendingDepartures = new HashMap<>();
 
@@ -63,7 +66,8 @@ public class RoomPresenceService {
             ChatService chatService,
             GoogleDriveOAuthService googleOAuth,
             @Qualifier("webSocketTaskScheduler") TaskScheduler scheduler,
-            @Value("${syncwatch.websocket.presence-grace:5s}") Duration gracePeriod
+            @Value("${syncwatch.websocket.presence-grace:5s}") Duration gracePeriod,
+            LiveKitScreenShareAuthorizer liveKitScreenShare
     ) {
         this.rooms = rooms;
         this.messaging = messaging;
@@ -71,6 +75,7 @@ public class RoomPresenceService {
         this.googleOAuth = googleOAuth;
         this.scheduler = scheduler;
         this.gracePeriod = gracePeriod;
+        this.liveKitScreenShare = liveKitScreenShare;
     }
 
     public Room.ParticipantRegistration registerParticipant(
@@ -203,6 +208,11 @@ public class RoomPresenceService {
                 SyncEvent.roomClosed(room, clientId)
         );
         chatService.removeRoom(room.getId());
+        try {
+            liveKitScreenShare.closeRoom(room);
+        } catch (LiveKitAdminException error) {
+            log.warn("Could not immediately close the associated LiveKit room");
+        }
         log.info("Room was explicitly closed by its host");
         return CloseRoomResult.CLOSED;
     }
@@ -268,11 +278,21 @@ public class RoomPresenceService {
         }
 
         for (RoomParticipant participant : departures) {
+            try {
+                liveKitScreenShare.removeParticipant(room, participant.clientId());
+            } catch (LiveKitAdminException error) {
+                log.warn("Could not immediately remove a departed LiveKit participant");
+            }
             publishDeparture(room, participant);
         }
 
         if (!roomHasParticipants && rooms.remove(room.getId(), room)) {
             chatService.removeRoom(room.getId());
+            try {
+                liveKitScreenShare.closeRoom(room);
+            } catch (LiveKitAdminException error) {
+                log.warn("Could not immediately close the empty LiveKit room");
+            }
             log.info("Removed empty room after {}", reason);
         }
     }

@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
@@ -27,12 +28,14 @@ class RoomControllerTest {
     private final GoogleDriveOAuthService googleOAuth = mock(GoogleDriveOAuthService.class);
     private final AuthService auth = mock(AuthService.class);
     private final ChatService chatService = new ChatService();
+    private final LiveKitScreenShareAuthorizer liveKitScreenShare = mock(LiveKitScreenShareAuthorizer.class);
     private final RoomController controller = new RoomController(
             rooms,
             messaging,
             googleOAuth,
             auth,
-            chatService
+            chatService,
+            liveKitScreenShare
     );
 
     @Test

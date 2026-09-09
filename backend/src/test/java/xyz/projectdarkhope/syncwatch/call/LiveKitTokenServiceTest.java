@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class LiveKitTokenServiceTest {
     @Test
-    void callTokenAllowsCameraMicrophoneAndScreenShareSources() {
+    void callTokenAllowsCameraAndMicrophoneButRequiresServerGrantForScreenShare() {
         Room room = new Room("ABC123", "Test Room");
         LiveKitTokenService service = new LiveKitTokenService(
                 "ws://localhost:7880",
@@ -24,12 +24,8 @@ class LiveKitTokenServiceTest {
                 StandardCharsets.UTF_8
         );
 
-        assertThat(payload).contains(
-                "camera",
-                "microphone",
-                "screen_share",
-                "screen_share_audio"
-        );
+        assertThat(payload).contains("camera", "microphone");
+        assertThat(payload).doesNotContain("screen_share", "screen_share_audio");
         var claims = new tools.jackson.databind.ObjectMapper().readTree(payload);
         assertThat(claims.get("exp").asLong() - java.time.Instant.now().getEpochSecond()).isBetween(599L, 601L);
         assertThat(claims.get("sub").asString()).isEqualTo("syncwatch:ABC123:client-1");

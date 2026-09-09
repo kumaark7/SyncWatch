@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
 
 import java.util.Optional;
@@ -14,16 +15,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class ScreenShareControllerTest {
     private final RoomStore rooms = new RoomStore();
     private final AuthService auth = mock(AuthService.class);
     private final SimpMessagingTemplate messaging = mock(SimpMessagingTemplate.class);
+    private final LiveKitScreenShareAuthorizer liveKitScreenShare = mock(LiveKitScreenShareAuthorizer.class);
     private final ScreenShareController controller = new ScreenShareController(
             rooms,
             auth,
-            messaging
+            messaging,
+            liveKitScreenShare
     );
 
     @Test
@@ -46,6 +50,8 @@ class ScreenShareControllerTest {
         assertThat(started.getStatusCode().value()).isEqualTo(200);
         assertThat(conflict.getStatusCode().value()).isEqualTo(409);
         assertThat(room.getScreenSharerClientId()).isEqualTo("host");
+        verify(liveKitScreenShare).grant(room, "host");
+        verify(liveKitScreenShare, never()).grant(room, "guest");
         verify(messaging).convertAndSend(
                 eq("/topic/room/" + room.getId()),
                 any(SyncEvent.class)
@@ -99,6 +105,34 @@ class ScreenShareControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(room.getScreenSharerClientId()).isNull();
+        verify(liveKitScreenShare).revoke(room, "guest");
+    }
+
+    @Test
+    void reEnablingGuestsRestoresAbilityOnlyAfterANewLeaseIsClaimed() {
+        Room room = roomWithParticipants();
+        MockHttpServletRequest hostRequest = requestFor(room, "host", "user:host");
+        MockHttpServletRequest guestRequest = requestFor(room, "guest", "guest:one");
+        controller.setGuestAccess(
+                room.getId(),
+                new ScreenShareController.GuestAccessRequest("host", false),
+                hostRequest
+        );
+
+        ResponseEntity<?> enabled = controller.setGuestAccess(
+                room.getId(),
+                new ScreenShareController.GuestAccessRequest("host", true),
+                hostRequest
+        );
+        ResponseEntity<?> started = controller.start(
+                room.getId(),
+                new ScreenShareController.ParticipantRequest("guest"),
+                guestRequest
+        );
+
+        assertThat(enabled.getStatusCode().value()).isEqualTo(200);
+        assertThat(started.getStatusCode().value()).isEqualTo(200);
+        verify(liveKitScreenShare).grant(room, "guest");
     }
 
     @Test

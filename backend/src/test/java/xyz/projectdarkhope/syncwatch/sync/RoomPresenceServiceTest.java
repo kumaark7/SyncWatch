@@ -8,6 +8,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessageType;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
 import xyz.projectdarkhope.syncwatch.room.RoomStore;
@@ -32,6 +33,7 @@ class RoomPresenceServiceTest {
     private RoomStore rooms;
     private RoomPresenceService presence;
     private GoogleDriveOAuthService googleOAuth;
+    private LiveKitScreenShareAuthorizer liveKitScreenShare;
 
     @BeforeEach
     void setUp() {
@@ -42,13 +44,15 @@ class RoomPresenceServiceTest {
         chatService = new ChatService();
         rooms = new RoomStore();
         googleOAuth = mock(GoogleDriveOAuthService.class);
+        liveKitScreenShare = mock(LiveKitScreenShareAuthorizer.class);
         presence = new RoomPresenceService(
                 rooms,
                 messaging,
                 chatService,
                 googleOAuth,
                 scheduler,
-                Duration.ofMillis(80)
+                Duration.ofMillis(80),
+                liveKitScreenShare
         );
     }
 
@@ -325,7 +329,8 @@ class RoomPresenceServiceTest {
         chatService,
         googleOAuth,
         scheduler,
-        Duration.ofSeconds(2)
+        Duration.ofSeconds(2),
+        liveKitScreenShare
         );
         Room room = rooms.create("Test room");
         claimHost(room, "stable-client");

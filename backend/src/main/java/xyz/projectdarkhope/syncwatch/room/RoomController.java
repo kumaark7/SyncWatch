@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import jakarta.servlet.http.HttpServletRequest;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitAdminException;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.chat.ChatMessage;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
@@ -24,19 +26,22 @@ public class RoomController {
     private final GoogleDriveOAuthService googleOAuth;
     private final AuthService authService;
     private final ChatService chatService;
+    private final LiveKitScreenShareAuthorizer liveKitScreenShare;
 
     public RoomController(
             RoomStore rooms,
             SimpMessagingTemplate messaging,
             GoogleDriveOAuthService googleOAuth,
             AuthService authService,
-            ChatService chatService
+            ChatService chatService,
+            LiveKitScreenShareAuthorizer liveKitScreenShare
     ) {
         this.rooms = rooms;
         this.messaging = messaging;
         this.googleOAuth = googleOAuth;
         this.authService = authService;
         this.chatService = chatService;
+        this.liveKitScreenShare = liveKitScreenShare;
     }
 
     @GetMapping("/health")
@@ -122,10 +127,20 @@ public class RoomController {
                         Map.of("error", "The selected participant is no longer in the room")
                 );
             }
-            if (!room.transferHost(request.currentHostClientId(), request.targetClientId())) {
-                return ResponseEntity.status(409).body(
-                        Map.of("error", "The room host changed before the transfer completed")
-                );
+            synchronized (room) {
+                if (!room.transferHost(request.currentHostClientId(), request.targetClientId())) {
+                    return ResponseEntity.status(409).body(
+                            Map.of("error", "The room host changed before the transfer completed")
+                    );
+                }
+                try {
+                    liveKitScreenShare.revokeCurrentShareIfUnauthorized(room);
+                } catch (LiveKitAdminException error) {
+                    room.transferHost(request.targetClientId(), request.currentHostClientId());
+                    return ResponseEntity.status(503).body(
+                            Map.of("error", "Could not update call permissions")
+                    );
+                }
             }
 
             messaging.convertAndSend(

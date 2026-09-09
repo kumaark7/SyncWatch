@@ -36,6 +36,25 @@ class AuthFilterTest {
     }
 
     @Test
+    void onlyExactSignedWebhookRouteBypassesSessionAuthentication() throws Exception {
+        MockHttpServletResponse webhook = new MockHttpServletResponse();
+        filter.doFilter(
+                new MockHttpServletRequest("POST", "/api/livekit/webhook"),
+                webhook,
+                new MockFilterChain()
+        );
+        MockHttpServletResponse sibling = new MockHttpServletResponse();
+        filter.doFilter(
+                new MockHttpServletRequest("POST", "/api/livekit/webhook/other"),
+                sibling,
+                new MockFilterChain()
+        );
+
+        assertThat(webhook.getStatus()).isEqualTo(200);
+        assertThat(sibling.getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void guestCanReachOnlyTheirInvitedRoomApis() throws Exception {
         MockHttpServletRequest allowed = guestRequest("GET", "/api/rooms/ABC123");
         MockHttpServletResponse allowedResponse = new MockHttpServletResponse();

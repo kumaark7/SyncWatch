@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.TaskScheduler;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.room.Room;
@@ -29,7 +30,8 @@ class SyncControllerGuestTest {
                 chat,
                 mock(GoogleDriveOAuthService.class),
                 mock(TaskScheduler.class),
-                Duration.ofSeconds(5)
+                Duration.ofSeconds(5),
+                mock(LiveKitScreenShareAuthorizer.class)
         );
         SyncController controller = new SyncController(rooms, messaging, chat, presence);
         Map<String, Object> session = new HashMap<>();

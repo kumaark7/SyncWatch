@@ -14,7 +14,7 @@ This describes the current application for **v0.8.0 release preparation**, not a
 - Collaborative play, pause, manual seek, and ten-second seek controls use authoritative room synchronization, with join-in-progress, drift correction, buffering and autoplay handling.
 - Room chat includes participant, call, and Host-change notices.
 - LiveKit voice/video calls include device selection, audio processing, camera quality targets, speaker mute, Push-to-Talk, connection indicators, and a floating call window.
-- Screen sharing reuses the existing LiveKit connection. One application-authorized share replaces the main player and identifies the sharer. Starting it pauses the movie for everyone; stopping restores the movie without automatically resuming.
+- Screen sharing reuses the existing LiveKit connection. One server-authorized share replaces the main player and identifies the sharer. Starting it pauses the movie for everyone; stopping restores the movie without automatically resuming.
 - Hosts can block anonymous guest screen sharing; registered participants remain eligible. Screen/tab audio depends on browser support.
 - Theater Mode, fullscreen, room keyboard shortcuts, and optional local camera gesture recognition (Open Palm pauses; Thumbs Up plays).
 
@@ -39,7 +39,7 @@ HTTP sessions expire after **30 minutes of inactivity**. The active UI calls `/a
 
 Remember Me uses a separate **30-day** random token, stored as a SHA-256 hash in H2 and rotated on successful restoration. It restores an HTTP session, not a lost room. Logout invalidates the session and revokes the current persistent token. Cookies are HttpOnly and SameSite=Lax; **set SYNCWATCH_COOKIE_SECURE=true in HTTPS production**. Local HTTP defaults to false.
 
-Participant/client identity is bound to the server session's user or guest ID. Browser-supplied client IDs are not authorization proofs. Room actions and LiveKit token issuance check ownership. Guests have room-scoped REST/STOMP access; Host privileges come from authoritative room state.
+Participant/client identity is bound to the server session's user or guest ID. Browser-supplied client IDs are not authorization proofs. Room actions and LiveKit token issuance check ownership. Call JWTs allow camera and microphone; the backend temporarily grants screen sources to the authoritative active sharer through LiveKit's participant-permission API. Signed LiveKit webhooks reconcile reconnects and unauthorized screen-track publication. Guests have room-scoped REST/STOMP access; Host privileges come from authoritative room state.
 
 ## Google Drive
 
@@ -100,7 +100,16 @@ Set these in the backend process environment; Spring does not automatically read
 
 Enable Google Drive and Picker APIs, authorize the frontend origin for OAuth, and restrict the browser API key appropriately. The app requests `drive.file`. Never place Google or LiveKit secrets in `VITE_` variables.
 
-For local LiveKit, run `livekit-server --dev` and configure its matching development credentials in the backend. Production requires a properly configured LiveKit service and HTTPS/WSS. Camera/screen permissions and system-audio capture depend on the browser/platform.
+For local LiveKit, run `livekit-server --dev` and configure its matching development credentials in the backend. Production requires a properly configured LiveKit service and HTTPS/WSS. Configure the LiveKit server to send signed webhooks to the backend's public `https://YOUR_SYNCWATCH_HOST/api/livekit/webhook` endpoint, using the same API key configured for SyncWatch:
+
+```yaml
+webhook:
+  api_key: YOUR_LIVEKIT_API_KEY
+  urls:
+    - https://YOUR_SYNCWATCH_HOST/api/livekit/webhook
+```
+
+The endpoint validates LiveKit's JWT signature and raw-body hash. Without webhook delivery, immediate permission changes still apply to connected participants, but stale-token reconnect and modified-client publication reconciliation are not complete. Camera/screen permissions and system-audio capture depend on the browser/platform.
 
 H2's default path is relative to the Java working directory. Use a stable absolute database path in production and back it up consistently. Preserve the Google client secret alongside that operational backup: changing it prevents decrypting existing Drive credentials. Keep secrets and database files out of Git.
 

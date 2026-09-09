@@ -30,6 +30,9 @@ public class AuthFilter extends OncePerRequestFilter {
         if ("/api/health".equals(path)) {
             return true;
         }
+        if ("/api/livekit/webhook".equals(path)) {
+            return true;
+        }
         return !path.startsWith("/api/") && !path.startsWith("/ws");
     }
 

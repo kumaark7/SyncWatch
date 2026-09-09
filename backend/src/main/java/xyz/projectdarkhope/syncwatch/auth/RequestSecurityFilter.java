@@ -36,8 +36,9 @@ public class RequestSecurityFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/")
-                && !request.getRequestURI().equals("/ws");
+        return request.getRequestURI().equals("/api/livekit/webhook")
+                || (!request.getRequestURI().startsWith("/api/")
+                && !request.getRequestURI().equals("/ws"));
     }
 
     @Override

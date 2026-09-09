@@ -90,7 +90,7 @@ CallProvider uses the existing LiveKit participant's setScreenShareEnabled with 
 
 Local track termination, call leave/disconnect, provider cleanup, and room departure release sharing state. The native browser picker determines tab/window/screen selection. System audio and capture support vary by browser/platform.
 
-Security boundary: LiveKit tokens permit screen sources. The reservation and guest block are enforced by application endpoints and stock-client subscription/rendering. They are not LiveKit server-side publish-permission revocation against a modified client.
+Security boundary: LiveKit join tokens permit camera and microphone but not screen sources. After an authenticated participant claims the one active share, the backend uses LiveKit `UpdateParticipant` to temporarily add `SCREEN_SHARE` and `SCREEN_SHARE_AUDIO`; stop, Host blocking, incompatible Host transfer, and departure revoke them while preserving camera/mic/data. Signed `participant_joined` and `track_published` webhooks reconcile self-hosted reconnects and modified clients. Production LiveKit must send webhooks to `/api/livekit/webhook` using the configured API key.
 
 ## Keyboard Shortcuts
 

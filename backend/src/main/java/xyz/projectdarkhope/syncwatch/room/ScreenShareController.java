@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import xyz.projectdarkhope.syncwatch.auth.AuthService;
+import xyz.projectdarkhope.syncwatch.call.LiveKitAdminException;
+import xyz.projectdarkhope.syncwatch.call.LiveKitScreenShareAuthorizer;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
 
 import java.util.Map;
@@ -23,15 +25,18 @@ public class ScreenShareController {
     private final RoomStore rooms;
     private final AuthService authService;
     private final SimpMessagingTemplate messaging;
+    private final LiveKitScreenShareAuthorizer liveKitScreenShare;
 
     public ScreenShareController(
             RoomStore rooms,
             AuthService authService,
-            SimpMessagingTemplate messaging
+            SimpMessagingTemplate messaging,
+            LiveKitScreenShareAuthorizer liveKitScreenShare
     ) {
         this.rooms = rooms;
         this.authService = authService;
         this.messaging = messaging;
+        this.liveKitScreenShare = liveKitScreenShare;
     }
 
     @PostMapping("/start")
@@ -59,6 +64,20 @@ public class ScreenShareController {
                         "error", "Another participant is already sharing"
                 ));
             }
+            try {
+                if (liveKitScreenShare.grant(room, clientId)
+                        == LiveKitScreenShareAuthorizer.Result.PARTICIPANT_NOT_CONNECTED) {
+                    room.stopScreenShare(clientId);
+                    return ResponseEntity.status(409).body(Map.of(
+                            "error", "Join the call before sharing your screen"
+                    ));
+                }
+            } catch (LiveKitAdminException error) {
+                room.stopScreenShare(clientId);
+                return ResponseEntity.status(503).body(Map.of(
+                        "error", "Screen sharing is temporarily unavailable"
+                ));
+            }
         }
         publishState(room, clientId);
         return ResponseEntity.ok(ScreenShareStateResponse.from(room));
@@ -78,8 +97,18 @@ public class ScreenShareController {
         if (authorizedOwner(browserRequest, room, clientId) == null) {
             return ResponseEntity.status(403).body(Map.of("error", "Not authorized for this room"));
         }
-        if (room.stopScreenShare(clientId)) {
-            publishState(room, clientId);
+        synchronized (room) {
+            if (clientId.equals(room.getScreenSharerClientId())) {
+                try {
+                    liveKitScreenShare.revoke(room, clientId);
+                } catch (LiveKitAdminException error) {
+                    return ResponseEntity.status(503).body(Map.of(
+                            "error", "Could not stop screen sharing"
+                    ));
+                }
+                room.stopScreenShare(clientId);
+                publishState(room, clientId);
+            }
         }
         return ResponseEntity.ok(ScreenShareStateResponse.from(room));
     }
@@ -101,7 +130,24 @@ public class ScreenShareController {
                     "error", "Only the Host can change screen sharing access"
             ));
         }
-        room.setGuestScreenSharingAllowed(request.allowed());
+        synchronized (room) {
+            String activeClientId = room.getScreenSharerClientId();
+            boolean revokesActiveGuest = !request.allowed()
+                    && activeClientId != null
+                    && !room.isHost(activeClientId)
+                    && room.getParticipantOwnerId(activeClientId) != null
+                    && room.getParticipantOwnerId(activeClientId).startsWith("guest:");
+            if (revokesActiveGuest) {
+                try {
+                    liveKitScreenShare.revoke(room, activeClientId);
+                } catch (LiveKitAdminException error) {
+                    return ResponseEntity.status(503).body(Map.of(
+                            "error", "Could not update screen sharing access"
+                    ));
+                }
+            }
+            room.setGuestScreenSharingAllowed(request.allowed());
+        }
         publishState(room, clientId);
         return ResponseEntity.ok(ScreenShareStateResponse.from(room));
     }

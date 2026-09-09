@@ -37,8 +37,8 @@ public class LiveKitTokenService {
             throw new IllegalStateException("LiveKit is not configured");
         }
 
-        String liveKitRoomName = "syncwatch-" + room.getId();
-        String identity = "syncwatch:" + room.getId() + ":" + clientId;
+        String liveKitRoomName = LiveKitIdentity.roomName(room);
+        String identity = LiveKitIdentity.participant(room.getId(), clientId);
 
         AccessToken accessToken = new AccessToken(apiKey, apiSecret);
         accessToken.setIdentity(identity);
@@ -50,9 +50,7 @@ public class LiveKitTokenService {
                 new CanPublish(true),
                 new CanPublishSources(List.of(
                         "camera",
-                        "microphone",
-                        "screen_share",
-                        "screen_share_audio"
+                        "microphone"
                 )),
                 new CanSubscribe(true),
                 new CanPublishData(true)

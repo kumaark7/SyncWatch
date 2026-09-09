@@ -34,6 +34,12 @@ class RequestSecurityFilterTest {
     }
 
     @Test
+    void exactSignedWebhookRouteDoesNotRequireBrowserCsrfHeaders() throws Exception {
+        assertThat(request("POST", "/api/livekit/webhook", null, false)).isEqualTo(204);
+        assertThat(request("POST", "/api/livekit/webhook/other", null, false)).isEqualTo(403);
+    }
+
+    @Test
     void privateResponsesAreNotCacheable() throws Exception {
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(new MockHttpServletRequest("GET", "/api/google/connection"), response, (req, res) -> {});

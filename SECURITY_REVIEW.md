@@ -5,6 +5,14 @@ No deployment or production configuration inspection was performed. This is not 
 
 ## A. Confirmed Security Issues Fixed
 
+### High: LiveKit screen-share policy was enforced only by the application client/API
+
+Call JWTs granted `screen_share` and `screen_share_audio` to every participant. A modified client could bypass the SyncWatch lease and Host-controlled guest policy by publishing directly to LiveKit.
+
+Fix: join JWTs now grant only camera and microphone sources. After the authenticated `/screen-share/start` lease succeeds, the backend uses LiveKit `UpdateParticipant` to grant screen sources only to that participant. Stop/block/Host-transfer paths revoke those sources while retaining camera, microphone, subscription and data permissions; LiveKit removes tracks whose sources are no longer permitted. Signed `participant_joined` and screen `track_published` webhooks reconcile stale-token reconnects and modified-client attempts. Departed participants and closed rooms are removed from LiveKit on a best-effort basis.
+
+Tests: token source assertions, grant/revoke permission assertions, active revocation, re-enable, registered/guest behavior, reconnect reconciliation, modified-client publication, Host transfer, signed webhook verification, spoofed identity and cross-room token tests.
+
 ### High: registered clients could inject broker events
 
 `WebSocketAuthInterceptor.preSend` previously returned immediately for registered users, permitting arbitrary broker destinations. A modified registered client could publish forged chat/room events to `/topic/...`, bypassing the authenticated application controllers, or subscribe with broker wildcards.
@@ -50,7 +58,7 @@ Test: `AuthServiceTest.unknownAndKnownUsersBothPerformPasswordVerificationWithSa
 - `RequestSecurityFilter` requires the exact configured Origin and `X-Requested-With: XmlHttpRequest` for HTTP mutations, including login/signup/guest/logout. WebSocket handshakes require that Origin. API responses carrying identity/tokens are `no-store`; responses have `nosniff`. Existing Spring CORS already rejected foreign origins, so absence of a traditional CSRF token alone is NOT classified as a demonstrated CSRF exploit.
 - The shared frontend request helper preserves request method/body/headers and includes cookies and the custom header. No POST/DELETE retry or UI change was added. Trusted CORS preflights remain available.
 - Single-instance synchronized, bounded in-memory rate windows use server-derived account/guest identity or container-reported peer address. Caller-supplied forwarding headers are ignored. Expired entries are cleaned on requests, not by polling. Each limiter holds at most 10,000 buckets.
-- LiveKit join JWT lifetime is reduced from one hour to ten minutes. Room/identity binding and existing necessary camera/microphone/screen/data grants remain unchanged. This is NOT immediate revocation; see section D.
+- LiveKit join JWT lifetime is reduced from one hour to ten minutes. Join grants contain camera/microphone only; screen-source permissions are temporary server-side participant permissions tied to the active room lease.
 - A socket cannot register multiple client identities in the same room. Name/client-ID lengths are bounded. Existing stable-ID reconnect and multi-tab behavior remain supported.
 - Google upstream error descriptions are replaced with generic errors. Room invitation codes were removed from application presence/chat diagnostics; no bodies or credentials are added to logs.
 - Environment-file variants and H2 database artifacts are ignored regardless of directory/name. A placeholder `.env.example` may still be tracked intentionally.
@@ -82,7 +90,7 @@ HTTP limits return 429 and a conservative `Retry-After`. Excess STOMP sends are 
 - Remember Me secrets are 32 random bytes; only SHA-256 hashes are stored in H2. Cookies contain opaque tokens, not user records. Remember Me cookies are HttpOnly, SameSite=Lax, Path=/, with a 30-day max-age. The session cookie is HttpOnly, SameSite=Lax, with the existing 30-minute server timeout. Secure is deployment-configured, NOT automatically guaranteed by source defaults.
 - HTTP CORS and STOMP origins use one configured frontend origin, not a credentialed wildcard.
 - Guest room scope comes from the session, not a caller's URL/client ID. Guests cannot create rooms or use another room's APIs. Host-only file/transfer/share-permission operations verify participant ownership and authoritative Host state. Close Room remains registered-Host-only under the existing policy; no guest permission expansion was made.
-- LiveKit token issuance checks actual membership and that the requester owns the participant. Tokens specify one LiveKit room and one identity, without room-admin/create/list grants. Tests cover spoofed identities and cross-room/guest access. Screen-source enforcement is the exception discussed below.
+- LiveKit token issuance checks actual membership and that the requester owns the participant. Tokens specify one LiveKit room and one identity, without room-admin/create/list grants. Tests cover spoofed identities and cross-room/guest access. Screen-source grants are reconciled through authenticated room actions and signed LiveKit webhooks.
 - Registered Drive credentials are keyed by authenticated user ID. Promoted guest Hosts use a separate memory-only store under server-generated guest IDs. Host transfer does not transfer token ownership. Stored refresh tokens are never returned to the browser. The short-lived access token returned to the owner is necessary for Google Picker and stays in frontend memory.
 - Drive refresh encryption remains AES-GCM with a random 12-byte nonce and 128-bit authentication tag. Tests verify different ciphertexts for repeated encryption, tamper rejection, wrong-key rejection, and owner isolation. No encryption format/schema migration was introduced.
 - Google uses the GIS popup code model, not redirect mode. Header/origin validation is the applicable CSRF mechanism; no missing redirect `state` vulnerability is asserted. See [Google's code-model guidance](https://developers.google.com/identity/oauth2/web/guides/use-code-model).
@@ -90,13 +98,11 @@ HTTP limits return 429 and a conservative `Retry-After`. Excess STOMP sends are 
 
 ## D. Remaining Risks / Manual Review
 
-### High: LiveKit media-server screen permission gap remains
+### LiveKit deployment and live-server verification
 
-The application reservation and guest block are enforced in `ScreenShareController`/`Room` and the stock frontend. Existing JWTs permit screen sources regardless of later reservation/guest-policy changes. A modified client can bypass that application-only restriction at the media server. Shortening TTL does not fix this policy gap, and this review does not claim that it does.
+Self-hosted LiveKit does not centrally revoke previously issued JWTs when participant permissions change. SyncWatch therefore starts every join token without screen sources and uses signed `participant_joined` and `track_published` webhooks to reconcile stale-token reconnects and unauthorized publications. The deployed LiveKit server must be configured to send webhooks to `/api/livekit/webhook`; without that configuration, connected-participant revocation works but reconnect/publication reconciliation is incomplete. See [LiveKit token lifecycle](https://docs.livekit.io/frontends/reference/tokens-grants/) and [RoomService permissions](https://docs.livekit.io/reference/other/roomservice-api/).
 
-A complete fix needs server-side LiveKit participant permission updates tied to reservation, Host transfer, policy changes, departure and reconnect, with failure handling tested against the deployed self-hosted server. That media-control integration was not introduced as an unverified partial change here. Treat it as an unresolved security follow-up, not as a safe reviewed area.
-
-Self-hosted LiveKit also does not immediately revoke old JWTs when removing participants/updating permissions. The server can refresh connected clients' tokens, so ten minutes is not a hard maximum call lifetime or proof of immediate removal. See [LiveKit token lifecycle](https://docs.livekit.io/frontends/reference/tokens-grants/).
+Automated tests verify grant construction, policy transitions and webhook verification/dispatch, but they do not prove the deployed LiveKit version unpublishes both screen tracks or delivers webhook retries as expected. Validate against the self-hosted server before release.
 
 ### Production checks required
 
@@ -124,18 +130,27 @@ Backend production paths below are relative to `backend/src/main/java/xyz/projec
 - `auth/RequestRateLimitFilter.java` (new)
 - `auth/RequestSecurityFilter.java` (new)
 - `auth/WebSocketAuthInterceptor.java`
+- `call/LiveKitAdminException.java` (new)
+- `call/LiveKitIdentity.java` (new)
+- `call/LiveKitRoomAdminClient.java` (new)
+- `call/LiveKitScreenShareAuthorizer.java` (new)
 - `call/LiveKitTokenService.java`
+- `call/LiveKitWebhookController.java` (new)
+- `call/LiveKitWebhookVerifier.java` (new)
 - `chat/ChatController.java` (logging only)
 - `config/WebSocketConfig.java`
 - `google/GoogleDriveConnectionRepository.java`
 - `google/GoogleDriveOAuthController.java`
 - `google/GoogleDriveOAuthService.java`
 - `room/Room.java` (identity registration validation only)
-- `sync/RoomPresenceService.java` (logging only)
+- `room/RoomController.java`
+- `room/ScreenShareController.java`
+- `sync/RoomPresenceService.java`
 
 Backend test paths below are relative to `backend/src/test/java/xyz/projectdarkhope/syncwatch/`:
 
 - `auth/AuthenticatedHandshakeInterceptorTest.java` (new)
+- `auth/AuthFilterTest.java`
 - `auth/AuthControllerTest.java`
 - `auth/AuthServiceTest.java`
 - `auth/GuestAuthControllerTest.java`
@@ -145,10 +160,17 @@ Backend test paths below are relative to `backend/src/test/java/xyz/projectdarkh
 - `auth/RequestSecurityFilterTest.java` (new)
 - `auth/WebSocketAuthInterceptorTest.java`
 - `call/LiveKitTokenServiceTest.java`
+- `call/LiveKitScreenShareAuthorizerTest.java` (new)
+- `call/LiveKitWebhookControllerTest.java` (new)
+- `call/LiveKitWebhookVerifierTest.java` (new)
 - `google/GoogleDriveConnectionRepositoryTest.java`
 - `google/GoogleDriveOAuthControllerTest.java`
 - `google/GoogleDriveTokenSecurityTest.java` (new)
 - `room/RoomIdentitySecurityTest.java` (new)
+- `room/RoomControllerTest.java`
+- `room/ScreenShareControllerTest.java`
+- `sync/RoomPresenceServiceTest.java`
+- `sync/SyncControllerGuestTest.java`
 
 Other files:
 
@@ -164,7 +186,7 @@ No application UI, playback algorithms, Range proxy, database schema, dependency
 
 ## F. Validation Results
 
-- Backend: 90 tests passing, zero failures/errors/skips, including real local HTTP filters and STOMP negotiation/injection rejection.
+- Backend: 104 tests passing, zero failures/errors/skips, including LiveKit permission/webhook tests and real local HTTP filters and STOMP negotiation/injection rejection.
 - Frontend: 11 tests passing, including session-read coordination, the new request-header/body/no-retry regression and existing reconnect tests.
 - Frontend production build: passing (`tsc -b` and Vite). Existing Lucide directive/chunk-size warnings remain.
 - `git diff --check`: passing.
