@@ -1,17 +1,19 @@
 # SyncWatch v0.9 Security Review
 
-Date: 2026-09-09. Scope: current `v0.9-reliability` source and focused regression tests.
-No deployment or production configuration inspection was performed. This is not a security certification.
+Date: 2026-09-09. Scope: current `v0.9-reliability` source, focused regression tests, and the documented production LiveKit screen-share authorization integration test.
+Production configuration outside that targeted LiveKit test was not inspected. This is not a security certification.
 
 ## A. Confirmed Security Issues Fixed
 
-### High: LiveKit screen-share policy was enforced only by the application client/API
+### High (CLOSED / RESOLVED): LiveKit screen-share policy was enforced only by the application client/API
 
 Call JWTs granted `screen_share` and `screen_share_audio` to every participant. A modified client could bypass the SyncWatch lease and Host-controlled guest policy by publishing directly to LiveKit.
 
 Fix: join JWTs now grant only camera and microphone sources. After the authenticated `/screen-share/start` lease succeeds, the backend uses LiveKit `UpdateParticipant` to grant screen sources only to that participant. Stop/block/Host-transfer paths revoke those sources while retaining camera, microphone, subscription and data permissions; LiveKit removes tracks whose sources are no longer permitted. Signed `participant_joined` and screen `track_published` webhooks reconcile stale-token reconnects and modified-client attempts. Departed participants and closed rooms are removed from LiveKit on a best-effort basis.
 
 Tests: token source assertions, grant/revoke permission assertions, active revocation, re-enable, registered/guest behavior, reconnect reconciliation, modified-client publication, Host transfer, signed webhook verification, spoofed identity and cross-room token tests.
+
+Production integration verification: LiveKit join JWTs contained only `CAMERA` and `MICROPHONE` by default; signed webhooks reached `/api/livekit/webhook` and returned 200; and `RoomService.UpdateParticipant` successfully added `SCREEN_SHARE` and `SCREEN_SHARE_AUDIO` only during an authorized share. Revoking permission while a share was active caused LiveKit to unpublish the screen-share track immediately, and granting permission again allowed sharing to resume. A direct LiveKit client using a blocked guest's otherwise valid token called `setScreenShareEnabled(true)` without using SyncWatch's `/screen-share/start` authorization and LiveKit rejected it with `PublishTrackError: failed to publish track, insufficient permissions`. This verifies that the Host policy is enforced by LiveKit rather than only by the SyncWatch UI/API.
 
 ### High: registered clients could inject broker events
 
@@ -98,11 +100,11 @@ HTTP limits return 429 and a conservative `Retry-After`. Excess STOMP sends are 
 
 ## D. Remaining Risks / Manual Review
 
-### LiveKit deployment and live-server verification
+### LiveKit operational dependency
 
-Self-hosted LiveKit does not centrally revoke previously issued JWTs when participant permissions change. SyncWatch therefore starts every join token without screen sources and uses signed `participant_joined` and `track_published` webhooks to reconcile stale-token reconnects and unauthorized publications. The deployed LiveKit server must be configured to send webhooks to `/api/livekit/webhook`; without that configuration, connected-participant revocation works but reconnect/publication reconciliation is incomplete. See [LiveKit token lifecycle](https://docs.livekit.io/frontends/reference/tokens-grants/) and [RoomService permissions](https://docs.livekit.io/reference/other/roomservice-api/).
+Self-hosted LiveKit does not centrally revoke previously issued JWTs when participant permissions change. SyncWatch therefore starts every join token without screen sources and uses signed `participant_joined` and `track_published` webhooks to reconcile reconnects and unauthorized publications. Production integration testing verified signed webhook delivery, source-specific permission updates, immediate active-track revocation, re-enable behavior, and rejection of a direct blocked-client publication attempt. The previous High severity bypass is closed.
 
-Automated tests verify grant construction, policy transitions and webhook verification/dispatch, but they do not prove the deployed LiveKit version unpublishes both screen tracks or delivers webhook retries as expected. Validate against the self-hosted server before release.
+Residual operational risk remains if the LiveKit webhook or RoomService configuration is removed, credentials drift, webhook delivery becomes unavailable, or a future LiveKit upgrade changes permission behavior. Monitor failed webhook/permission operations and repeat the direct-client authorization test after LiveKit or deployment configuration changes. The production test covered the deployed screen-share path; it is not a general certification of LiveKit or SyncWatch security. See [LiveKit token lifecycle](https://docs.livekit.io/frontends/reference/tokens-grants/) and [RoomService permissions](https://docs.livekit.io/reference/other/roomservice-api/).
 
 ### Production checks required
 
@@ -112,7 +114,7 @@ Automated tests verify grant construction, policy transitions and webhook verifi
 4. Verify trusted proxy/client-address handling. The limiter intentionally does not parse X-Forwarded-For. If Tomcat sees only the loopback proxy address, anonymous login/signup limits are shared across visitors. Do not fix this by trusting arbitrary internet-supplied headers; configure trust only for the actual proxy and keep port 8080 private. Shared NATs still share anonymous budgets.
 5. Check H2/backup filesystem permissions and the configured absolute database path. Default local H2 credentials are not a production filesystem-security boundary. No network H2 console/server is configured by this source; verify none is enabled externally.
 6. Google token encryption derives its key from the backend Google client secret. Rotating that secret makes existing encrypted tokens unreadable; plan reconnect or an explicit key migration. Backups containing the database plus that secret can decrypt the stored connections. This review did not rotate secrets or redesign key management.
-7. Restrict the browser Google API key and OAuth origins in Google Cloud Console. Run real popup/Picker, account-switch, guest promotion/departure, concurrent disconnect, and long-session refresh tests. No real Google authorization or LiveKit media traffic was exercised by automated tests.
+7. Restrict the browser Google API key and OAuth origins in Google Cloud Console. Run real popup/Picker, account-switch, guest promotion/departure, concurrent disconnect, and long-session refresh tests. Automated tests did not exercise real Google authorization. LiveKit screen-share authorization was production integration-tested as recorded above; repeat it after LiveKit server or permission-configuration changes.
 8. Room IDs intentionally act as invitation capabilities. A registered user knowing a code can join/read that room; there is no private ACL or approval system. Wildcard subscriptions are now rejected, and guest sessions are room-scoped. Distributed guessing, persistent connection/room quotas, signup abuse and large request bodies remain operational/resource risks beyond these lightweight limits.
 9. Review production access logs and HTTP/STOMP wire-debug logging: reverse-proxy paths/query strings may contain invitation codes. Do not log bodies, cookies, authorization headers or OAuth credentials. Historical Git secret scanning and dependency vulnerability auditing were not completed by this targeted source review.
 10. Repeat two-person foreground/background/reconnect endurance testing after the live-session guards. The existing scheduler-selection startup notice and build warnings were not changed as unrelated cleanup. Existing five-second reconnect grace and movie algorithms are unchanged.
@@ -190,6 +192,7 @@ No application UI, playback algorithms, Range proxy, database schema, dependency
 - Frontend: 11 tests passing, including session-read coordination, the new request-header/body/no-retry regression and existing reconnect tests.
 - Frontend production build: passing (`tsc -b` and Vite). Existing Lucide directive/chunk-size warnings remain.
 - `git diff --check`: passing.
+- Production LiveKit integration: signed webhook delivery returned 200; `RoomService.UpdateParticipant` grant/revoke succeeded; active screen sharing was immediately unpublished on revoke; re-enable succeeded; and a blocked direct-client publication attempt failed with `PublishTrackError: failed to publish track, insufficient permissions` without invoking `/screen-share/start`.
 - Runtime used for backend validation: local JDK 25, compiling to the project's Java 21 target. A JDK 21 production run remains a deployment acceptance check.
 - Windows JDK loopback creation initially failed. Validation succeeded using a workspace-local socket path, without modifying application/build configuration:
 
