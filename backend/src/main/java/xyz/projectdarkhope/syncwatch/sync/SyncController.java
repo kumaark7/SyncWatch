@@ -95,10 +95,13 @@ public class SyncController {
                 return;
             }
 
-            messaging.convertAndSend(
-                    "/topic/room/" + room.getId(),
-                    SyncEvent.state(room)
-            );
+            // Keep legacy active PWA clients synchronized until the capability fallback can retire.
+            if (!message.supportsClientSnapshot()) {
+                messaging.convertAndSend(
+                        "/topic/room/" + room.getId(),
+                        SyncEvent.state(room)
+                );
+            }
             messaging.convertAndSend(
                     "/topic/room/" + room.getId(),
                     SyncEvent.participants(room)
@@ -135,36 +138,41 @@ public class SyncController {
             return;
         }
 
-        boolean playing = switch (type) {
-            case "PLAY" -> true;
-            case "PAUSE" -> false;
-            case "SEEK" -> room.isPlaying();
-            default -> room.isPlaying();
-        };
+        SyncEvent controlEvent;
+        synchronized (room) {
+            boolean playing = switch (type) {
+                case "PLAY" -> true;
+                case "PAUSE" -> false;
+                case "SEEK" -> room.isPlaying();
+                default -> room.isPlaying();
+            };
 
-        double effectiveTime = message.time();
-        if (!"SEEK".equals(type)
-                && effectiveTime <= ZERO_RESET_THRESHOLD_SECONDS
-                && room.hasFile()) {
-            double authoritativeTime = room.getCurrentTime();
-            if (authoritativeTime > ESTABLISHED_POSITION_SECONDS) {
-                effectiveTime = authoritativeTime;
-                logger.info("Protected nonzero playback position from a zero {} control", type);
+            double effectiveTime = message.time();
+            if (!"SEEK".equals(type)
+                    && effectiveTime <= ZERO_RESET_THRESHOLD_SECONDS
+                    && room.hasFile()) {
+                double authoritativeTime = room.getCurrentTime();
+                if (authoritativeTime > ESTABLISHED_POSITION_SECONDS) {
+                    effectiveTime = authoritativeTime;
+                    logger.info("Protected nonzero playback position from a zero {} control", type);
+                }
             }
-        }
 
-        if ("SEEK".equals(type)) {
-            room.updateSeek(effectiveTime, playing);
-        } else {
-            room.updatePlayback(effectiveTime, playing);
-        }
+            if ("SEEK".equals(type)) {
+                room.updateSeek(effectiveTime, playing);
+            } else {
+                room.updatePlayback(effectiveTime, playing);
+            }
 
-        logger.info("Applied synchronized playback control; type={}; time={}; playing={}; seekId={}",
-                type, room.getCurrentTime(), room.isPlaying(), room.getSeekVersion());
+            controlEvent = SyncEvent.control(type, room, effectiveClientId);
+            logger.info("Applied synchronized playback control; type={}; time={}; playing={}; seekId={}; revision={}",
+                    type, controlEvent.time(), controlEvent.playing(), controlEvent.seekId(),
+                    controlEvent.playbackRevision());
+        }
 
         messaging.convertAndSend(
                 "/topic/room/" + room.getId(),
-                SyncEvent.control(type, room, effectiveClientId)
+                controlEvent
         );
     }
 }

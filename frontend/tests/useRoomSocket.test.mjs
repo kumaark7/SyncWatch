@@ -90,9 +90,9 @@ function harness() {
   return {
     clients, logs, listeners, browserDocument,
     advanceTime(milliseconds) { monotonicTime += milliseconds; },
-    render(room = "ROOM", name = "Name") {
+    render(room = "ROOM", name = "Name", acceptEvent) {
       cursor = 0;
-      const result = exports.useRoomSocket(room, name, "stable-client");
+      const result = exports.useRoomSocket(room, name, "stable-client", acceptEvent);
       const effects = pending;
       pending = [];
       effects.forEach(effect => effect());
@@ -119,6 +119,12 @@ test("transient reconnect re-subscribes and JOINs with the same identity", () =>
   h.render();
   const client = h.clients[0];
   client.connect();
+  assert.equal(h.render().connectionVersion, 1);
+  assert.equal(h.render().connectedRoomId, "ROOM");
+  assert.equal(
+    h.render().connectedConnectionGeneration,
+    h.render().requestedConnectionGeneration
+  );
   client.subscriptions[0].callback({ body: JSON.stringify({
     type: "STATE", time: 150, playing: true
   }) });
@@ -126,17 +132,72 @@ test("transient reconnect re-subscribes and JOINs with the same identity", () =>
   assert.equal(h.render().connected, false);
   assert.equal(h.render().lastEvent.time, 150);
   client.connect();
+  assert.equal(h.render().connectionVersion, 2);
+  assert.equal(h.render().connectedRoomId, "ROOM");
   assert.equal(client.subscriptions.length, 2);
   assert.equal(client.published.length, 2);
   assert.equal(h.render().lastEvent.time, 150);
   for (const frame of client.published) {
     assert.equal(JSON.parse(frame.body).type, "JOIN");
     assert.equal(JSON.parse(frame.body).clientId, "stable-client");
+    assert.equal(JSON.parse(frame.body).clientSnapshotSupported, true);
   }
   client.subscriptions[0].callback({ body: JSON.stringify({
     type: "PARTICIPANTS", participants: [{ clientId: "stable-client" }]
   }) });
   assert.equal(h.render().chatReady, true);
+});
+
+test("leaving and re-entering the same room waits for the replacement socket", () => {
+  const h = harness();
+  h.render();
+  h.clients[0].connect();
+  const firstConnection = h.render();
+  assert.equal(firstConnection.connected, true);
+  assert.equal(
+    firstConnection.connectedConnectionGeneration,
+    firstConnection.requestedConnectionGeneration
+  );
+
+  h.render("");
+  const reentered = h.render("ROOM");
+  assert.equal(reentered.connected, false);
+  assert.equal(reentered.connectedRoomId, "ROOM");
+  assert.notEqual(
+    reentered.connectedConnectionGeneration,
+    reentered.requestedConnectionGeneration
+  );
+
+  h.clients[1].connect();
+  const replacement = h.render();
+  assert.equal(replacement.connected, true);
+  assert.equal(
+    replacement.connectedConnectionGeneration,
+    replacement.requestedConnectionGeneration
+  );
+});
+
+test("socket receipt can reject a stale playback envelope before React applies it", () => {
+  const h = harness();
+  const accepted = [];
+  const acceptEvent = event => {
+    accepted.push(event.playbackRevision);
+    return event.playbackRevision >= 10;
+  };
+  h.render("ROOM", "Name", acceptEvent);
+  const client = h.clients[0];
+  client.connect();
+
+  client.subscriptions[0].callback({ body: JSON.stringify({
+    type: "STATE", playbackRevision: 9
+  }) });
+  assert.equal(h.render("ROOM", "Name", acceptEvent).lastEvent, null);
+
+  client.subscriptions[0].callback({ body: JSON.stringify({
+    type: "PLAY", playbackRevision: 10
+  }) });
+  assert.equal(h.render("ROOM", "Name", acceptEvent).lastEvent.playbackRevision, 10);
+  assert.deepEqual(accepted, [9, 10]);
 });
 
 test("a replaced client's delayed close cannot disconnect its replacement", () => {

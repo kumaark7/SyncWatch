@@ -23,6 +23,8 @@ import type {
   AuthoritativePlayRecoveryEvent,
   AuthoritativePlayRecoveryState
 } from "./playbackSync";
+import { authoritativePlaybackTarget } from "./serverClock";
+import type { ServerClockEstimate } from "./serverClock";
 import type { SyncEvent } from "./types";
 
 type Props = {
@@ -33,6 +35,7 @@ type Props = {
   initialTime: number;
   initialPlaying: boolean;
   syncEvent: SyncEvent | null;
+  serverClockEstimate: ServerClockEstimate | null;
   onControl: (
     type: "PLAY" | "PAUSE" | "SEEK",
     time: number,
@@ -82,6 +85,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   );
   const lastAppliedSeekIdRef = useRef(0);
   const authoritativeZeroSeekIdRef = useRef<number | null>(null);
+  const mediaVersionRef = useRef(props.mediaVersion);
   const localPausedSeekRef = useRef(false);
   const playRecoveryRef = useRef<AuthoritativePlayRecoveryState>({
     retryPending: false,
@@ -415,19 +419,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   }));
 
   const targetTime = (event: SyncEvent) => {
-    if (!event.playing) {
-      return Math.max(0, event.time);
-    }
-
-    const transportDelay =
-      Math.max(
-        0,
-        Date.now() - event.serverTime
-      ) / 1000;
-
-    return Math.max(
-      0,
-      event.time + transportDelay
+    return authoritativePlaybackTarget(
+      event.time,
+      event.serverTime,
+      event.playing,
+      props.serverClockEstimate,
+      performance.now()
     );
   };
 
@@ -783,6 +780,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       !video ||
       !event ||
       !props.hasFile ||
+      event.mediaVersion !== mediaVersionRef.current ||
       event.type === "FILE_SELECTED"
     ) {
       return;
@@ -807,6 +805,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   ]);
 
   useEffect(() => {
+    mediaVersionRef.current = props.mediaVersion;
     cancelAuthoritativePlayRecovery("media-reset");
     setMediaDuration(null);
     mediaUnavailableRef.current = false;

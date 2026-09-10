@@ -1,4 +1,25 @@
 export type TimedSyncEventType = "PLAY" | "PAUSE" | "SEEK" | "STATE";
+export type PlaybackOrderEventType = TimedSyncEventType | "MEDIA";
+
+export type PlaybackOrder = {
+  mediaVersion: number;
+  playbackRevision: number;
+  serverTime: number;
+};
+
+export type PlaybackMediaState = {
+  mediaVersion: number;
+  hasFile: boolean;
+  fileName: string | null;
+};
+
+export type PlaybackRoomSnapshot = PlaybackMediaState & {
+  playing: boolean;
+  currentTime: number;
+  serverTime: number;
+  seekId: number;
+  playbackRevision: number;
+};
 
 export type PlayRejectionKind = "policy-blocked" | "transient" | "other";
 
@@ -18,6 +39,54 @@ export type AuthoritativePlayRecoveryEvent =
 
 const ZERO_TIME_THRESHOLD = 0.05;
 const ESTABLISHED_TIME_THRESHOLD = 1;
+
+export function shouldAcceptPlaybackOrder(
+  current: PlaybackOrder | null,
+  incoming: PlaybackOrder,
+  type: PlaybackOrderEventType
+) {
+  if (!current) return true;
+  if (incoming.mediaVersion !== current.mediaVersion) {
+    return incoming.mediaVersion > current.mediaVersion;
+  }
+  if (incoming.playbackRevision !== current.playbackRevision) {
+    return incoming.playbackRevision > current.playbackRevision;
+  }
+
+  return type === "STATE" && incoming.serverTime > current.serverTime;
+}
+
+export function resolvePlaybackMediaState(
+  current: PlaybackMediaState,
+  incoming: PlaybackMediaState
+): PlaybackMediaState {
+  if (incoming.mediaVersion === current.mediaVersion) {
+    return current;
+  }
+
+  return {
+    mediaVersion: incoming.mediaVersion,
+    hasFile: incoming.hasFile,
+    fileName: incoming.hasFile ? incoming.fileName : null
+  };
+}
+
+export function mergePlaybackRoomSnapshot<T extends PlaybackRoomSnapshot>(
+  current: T,
+  snapshot: PlaybackRoomSnapshot
+): T {
+  return {
+    ...current,
+    hasFile: snapshot.hasFile,
+    fileName: snapshot.fileName,
+    playing: snapshot.playing,
+    currentTime: snapshot.currentTime,
+    serverTime: snapshot.serverTime,
+    seekId: snapshot.seekId,
+    mediaVersion: snapshot.mediaVersion,
+    playbackRevision: snapshot.playbackRevision
+  };
+}
 
 export function classifyPlayRejection(error: unknown): PlayRejectionKind {
   const name = typeof error === "object" && error !== null && "name" in error
