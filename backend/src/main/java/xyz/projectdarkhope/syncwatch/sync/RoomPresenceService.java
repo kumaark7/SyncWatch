@@ -66,7 +66,7 @@ public class RoomPresenceService {
             ChatService chatService,
             GoogleDriveOAuthService googleOAuth,
             @Qualifier("webSocketTaskScheduler") TaskScheduler scheduler,
-            @Value("${syncwatch.websocket.presence-grace:5s}") Duration gracePeriod,
+            @Value("${syncwatch.websocket.presence-grace:30s}") Duration gracePeriod,
             LiveKitScreenShareAuthorizer liveKitScreenShare
     ) {
         this.rooms = rooms;

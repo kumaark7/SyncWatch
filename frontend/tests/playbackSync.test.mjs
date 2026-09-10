@@ -78,3 +78,48 @@ test("paused-seek suppression ends at media lifecycle recovery boundaries", () =
   assert.match(videoPlayer, /const finishRecovery[\s\S]*clearLocalPausedSeek\(\)/);
   assert.match(videoPlayer, /const shouldPlay =[\s\S]*clearLocalPausedSeek\(\)[\s\S]*localControlTime\(video, "SEEK"\)/);
 });
+
+test("play rejection classification distinguishes policy and transient failures", () => {
+  assert.equal(playback.classifyPlayRejection({ name: "NotAllowedError" }), "policy-blocked");
+  assert.equal(playback.classifyPlayRejection({ name: "AbortError" }), "transient");
+  assert.equal(playback.classifyPlayRejection({ name: "NotSupportedError" }), "other");
+  assert.equal(playback.classifyPlayRejection(new Error("media failed")), "other");
+});
+
+test("authoritative play recovery is canceled by pause and cleared by success", () => {
+  const idle = { retryPending: false, policyBlocked: false };
+  const pending = playback.nextAuthoritativePlayRecoveryState(idle, "transient-rejection");
+  assert.equal(pending.retryPending, true);
+  assert.equal(pending.policyBlocked, false);
+  const paused = playback.nextAuthoritativePlayRecoveryState(
+    pending,
+    "authoritative-pause"
+  );
+  assert.equal(paused.retryPending, false);
+  assert.equal(paused.policyBlocked, false);
+  const succeeded = playback.nextAuthoritativePlayRecoveryState(
+    pending,
+    "play-succeeded"
+  );
+  assert.equal(succeeded.retryPending, false);
+  assert.equal(succeeded.policyBlocked, false);
+});
+
+test("policy blocking is the only recovery state that requests the playback overlay", () => {
+  const idle = { retryPending: false, policyBlocked: false };
+  const blocked = playback.nextAuthoritativePlayRecoveryState(idle, "policy-rejection");
+  assert.equal(blocked.retryPending, false);
+  assert.equal(blocked.policyBlocked, true);
+  const unrelated = playback.nextAuthoritativePlayRecoveryState(idle, "other-rejection");
+  assert.equal(unrelated.retryPending, false);
+  assert.equal(unrelated.policyBlocked, false);
+});
+
+test("transient authoritative play recovery remains remote and is bounded", () => {
+  const videoPlayer = readFileSync(new URL("../src/VideoPlayer.tsx", import.meta.url), "utf8");
+  assert.match(videoPlayer, /beginRemoteApply\(2000\);\s*void tryRemotePlay\(video, "recovery"\)/);
+  assert.match(videoPlayer, /kind === "transient" && attemptKind !== "recovery"/);
+  assert.match(videoPlayer, /policyBlocked && attemptKind !== "user"/);
+  assert.match(videoPlayer, /authoritativePlayInFlightRef\.current/);
+  assert.match(videoPlayer, /cancelAuthoritativePlayRecovery\("authoritative-pause"\)/);
+});

@@ -10,12 +10,18 @@ import { API_URL } from "./api";
 import GestureControl from "./gesture/GestureControl";
 import type { GesturePlaybackAction } from "./gesture/useGesturePlaybackControl";
 import {
+  classifyPlayRejection,
   isNewSeekEvent,
   isExpectedRemoteSeek,
   isStaleAgainstSeek,
   mediaSourceIdentity,
+  nextAuthoritativePlayRecoveryState,
   safeLocalControlTime,
   shouldApplyAuthoritativeTime
+} from "./playbackSync";
+import type {
+  AuthoritativePlayRecoveryEvent,
+  AuthoritativePlayRecoveryState
 } from "./playbackSync";
 import type { SyncEvent } from "./types";
 
@@ -77,6 +83,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   const lastAppliedSeekIdRef = useRef(0);
   const authoritativeZeroSeekIdRef = useRef<number | null>(null);
   const localPausedSeekRef = useRef(false);
+  const playRecoveryRef = useRef<AuthoritativePlayRecoveryState>({
+    retryPending: false,
+    policyBlocked: false
+  });
+  const authoritativePlayInFlightRef = useRef(false);
+  const playAttemptIdRef = useRef(0);
   const remoteApplyTimer = useRef<number | null>(null);
   const rateTimer = useRef<number | null>(null);
   const overlayTimer = useRef<number | null>(null);
@@ -227,6 +239,25 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     });
   };
 
+  const updatePlayRecovery = (
+    event: AuthoritativePlayRecoveryEvent
+  ) => {
+    const next = nextAuthoritativePlayRecoveryState(
+      playRecoveryRef.current,
+      event
+    );
+    playRecoveryRef.current = next;
+    setNeedsPlaybackStart(next.policyBlocked);
+  };
+
+  const cancelAuthoritativePlayRecovery = (
+    event: "authoritative-pause" | "media-reset"
+  ) => {
+    playAttemptIdRef.current += 1;
+    authoritativePlayInFlightRef.current = false;
+    updatePlayRecovery(event);
+  };
+
   const localControlTime = (
     video: HTMLVideoElement,
     control: "PLAY" | "PAUSE" | "SEEK"
@@ -321,9 +352,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       return;
     }
 
-    void video.play().catch(() => {
-      setNeedsPlaybackStart(true);
-    });
+    void video.play()
+      .then(() => updatePlayRecovery("play-succeeded"))
+      .catch((error: unknown) => {
+        const kind = classifyPlayRejection(error);
+        if (kind === "policy-blocked") {
+          updatePlayRecovery("policy-rejection");
+          return;
+        }
+
+        updatePlayRecovery("other-rejection");
+        mediaDiagnostic("local-play-rejected", { kind });
+      });
   };
 
   useImperativeHandle(ref, () => ({
@@ -348,6 +388,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       resetRate(video);
       video.pause();
       authoritativePlayingRef.current = false;
+      cancelAuthoritativePlayRecovery("authoritative-pause");
       const controlTime = safeLocalControlTime(
         video.currentTime,
         lastStableTimeRef.current,
@@ -391,17 +432,86 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   };
 
   const tryRemotePlay = async (
-    video: HTMLVideoElement
+    video: HTMLVideoElement,
+    attemptKind: "authoritative" | "recovery" | "user" = "authoritative"
   ) => {
+    if (
+      !authoritativePlayingRef.current ||
+      authoritativePlayInFlightRef.current ||
+      (playRecoveryRef.current.retryPending && attemptKind !== "recovery") ||
+      (playRecoveryRef.current.policyBlocked && attemptKind !== "user")
+    ) {
+      return;
+    }
+
+    if (attemptKind === "recovery" || attemptKind === "user") {
+      updatePlayRecovery("retry-started");
+    }
+
+    const attemptId = ++playAttemptIdRef.current;
+    authoritativePlayInFlightRef.current = true;
     try {
       await video.play();
-      setNeedsPlaybackStart(false);
-    } catch {
-      setNeedsPlaybackStart(true);
-      console.warn(
-        "Autoplay blocked. Waiting for user gesture."
-      );
+      if (videoRef.current !== video) {
+        return;
+      }
+
+      if (!authoritativePlayingRef.current) {
+        enforceAuthoritativePause(video);
+        return;
+      }
+
+      if (attemptId !== playAttemptIdRef.current) {
+        return;
+      }
+
+      updatePlayRecovery("play-succeeded");
+    } catch (error: unknown) {
+      if (
+        attemptId !== playAttemptIdRef.current ||
+        videoRef.current !== video ||
+        !authoritativePlayingRef.current
+      ) {
+        return;
+      }
+
+      const kind = classifyPlayRejection(error);
+      if (kind === "policy-blocked") {
+        updatePlayRecovery("policy-rejection");
+        console.warn("Playback requires a user gesture.");
+      } else if (kind === "transient" && attemptKind !== "recovery") {
+        updatePlayRecovery("transient-rejection");
+        mediaDiagnostic("authoritative-play-interrupted", { kind });
+      } else {
+        updatePlayRecovery("other-rejection");
+        mediaDiagnostic(
+          attemptKind === "recovery"
+            ? "authoritative-play-recovery-rejected"
+            : "authoritative-play-rejected",
+          { kind }
+        );
+      }
+    } finally {
+      if (attemptId === playAttemptIdRef.current) {
+        authoritativePlayInFlightRef.current = false;
+      }
     }
+  };
+
+  const retryPendingAuthoritativePlay = (
+    video: HTMLVideoElement
+  ) => {
+    if (
+      !playRecoveryRef.current.retryPending ||
+      !authoritativePlayingRef.current ||
+      mediaRecoveringRef.current ||
+      video.seeking
+    ) {
+      return;
+    }
+
+    beginRemoteApply(2000);
+    void tryRemotePlay(video, "recovery");
   };
 
   const applyPlaybackEvent = (
@@ -456,6 +566,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     }
 
     authoritativePlayingRef.current = event.playing;
+    if (!event.playing) {
+      cancelAuthoritativePlayRecovery("authoritative-pause");
+    }
     const ownEvent = Boolean(event.senderClientId) &&
       event.senderClientId === props.clientId;
     const eventWasFromHost = Boolean(event.hostClientId) &&
@@ -638,6 +751,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
 
   useEffect(() => {
     return () => {
+      playAttemptIdRef.current += 1;
+      authoritativePlayInFlightRef.current = false;
+      playRecoveryRef.current = nextAuthoritativePlayRecoveryState(
+        playRecoveryRef.current,
+        "media-reset"
+      );
       if (remoteApplyTimer.current !== null) {
         window.clearTimeout(remoteApplyTimer.current);
       }
@@ -679,12 +798,16 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   useEffect(() => {
     authoritativePlayingRef.current =
       props.initialPlaying;
+    if (!props.initialPlaying) {
+      cancelAuthoritativePlayRecovery("authoritative-pause");
+    }
   }, [
     props.initialPlaying,
     props.mediaVersion
   ]);
 
   useEffect(() => {
+    cancelAuthoritativePlayRecovery("media-reset");
     setMediaDuration(null);
     mediaUnavailableRef.current = false;
     mediaRecoveringRef.current = false;
@@ -705,7 +828,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     }
 
     if (!props.hasFile) {
-      setNeedsPlaybackStart(false);
       setOverlayMode("none");
       authoritativePlayingRef.current = false;
     }
@@ -757,6 +879,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       setOverlayMode("none");
     }
     reconcilePendingSync(video);
+    retryPendingAuthoritativePlay(video);
   };
 
   return (
@@ -819,7 +942,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         }}
 
         onPlay={(event) => {
-          if (isApplyingRemote()) return;
+          if (
+            isApplyingRemote() ||
+            authoritativePlayInFlightRef.current ||
+            playRecoveryRef.current.retryPending
+          ) return;
 
           if (localPausedSeekRef.current) {
             const video =
@@ -834,7 +961,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
             event.currentTarget;
 
           resetRate(video);
-          setNeedsPlaybackStart(false);
+          updatePlayRecovery("play-succeeded");
           clearLocalPausedSeek();
           authoritativePlayingRef.current = true;
 
@@ -847,6 +974,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         onPause={(event) => {
           if (
             isApplyingRemote() ||
+            authoritativePlayInFlightRef.current ||
+            (authoritativePlayingRef.current && playRecoveryRef.current.retryPending) ||
             event.currentTarget.ended
           ) {
             return;
@@ -858,6 +987,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           resetRate(video);
           clearLocalPausedSeek();
           authoritativePlayingRef.current = false;
+          cancelAuthoritativePlayRecovery("authoritative-pause");
 
           const controlTime = localControlTime(video, "PAUSE");
           if (controlTime !== null) {
@@ -919,7 +1049,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
               readyState: video.readyState
             });
             if (!mediaRecoveringRef.current) {
-              reconcilePendingSync(video);
+              finishRecovery(video);
             }
             enforceAuthoritativePause(video);
             return;
@@ -943,7 +1073,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
 
           mediaRecoveringRef.current = video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
           if (!mediaRecoveringRef.current) {
-            reconcilePendingSync(video);
+            finishRecovery(video);
           }
 
           if (!shouldPlay && !video.paused) {
@@ -995,6 +1125,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           enforceAuthoritativePause(
             event.currentTarget
           );
+          if (authoritativePlayingRef.current) {
+            updatePlayRecovery("play-succeeded");
+          }
           finishRecovery(event.currentTarget);
         }}
 
@@ -1015,6 +1148,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         }}
 
         onEmptied={(event) => {
+          cancelAuthoritativePlayRecovery("media-reset");
           mediaUnavailableRef.current = true;
           mediaRecoveringRef.current = false;
           remoteSeekPendingRef.current = false;
@@ -1029,6 +1163,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
 
         onError={(event) => {
           const video = event.currentTarget;
+          cancelAuthoritativePlayRecovery("media-reset");
           mediaUnavailableRef.current = true;
           mediaRecoveringRef.current = false;
           remoteSeekPendingRef.current = false;
@@ -1099,7 +1234,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
         <div className="playbackOverlay">
           <button
             className="startSyncButton"
-            onClick={async () => {
+            onClick={() => {
               const video =
                 videoRef.current;
 
@@ -1131,17 +1266,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
                 applyRemoteTime(video, props.initialTime, "initial-state-seek-applied");
               }
 
-              try {
-                await video.play();
-                setNeedsPlaybackStart(
-                  false
-                );
-              } catch (error) {
-                console.warn(
-                  "Playback still blocked after user gesture.",
-                  error
-                );
-              }
+              void tryRemotePlay(video, "user");
             }}
           >
             ▶ Start synced playback

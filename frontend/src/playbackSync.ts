@@ -1,7 +1,46 @@
 export type TimedSyncEventType = "PLAY" | "PAUSE" | "SEEK" | "STATE";
 
+export type PlayRejectionKind = "policy-blocked" | "transient" | "other";
+
+export type AuthoritativePlayRecoveryState = {
+  retryPending: boolean;
+  policyBlocked: boolean;
+};
+
+export type AuthoritativePlayRecoveryEvent =
+  | "transient-rejection"
+  | "policy-rejection"
+  | "other-rejection"
+  | "retry-started"
+  | "play-succeeded"
+  | "authoritative-pause"
+  | "media-reset";
+
 const ZERO_TIME_THRESHOLD = 0.05;
 const ESTABLISHED_TIME_THRESHOLD = 1;
+
+export function classifyPlayRejection(error: unknown): PlayRejectionKind {
+  const name = typeof error === "object" && error !== null && "name" in error
+    ? String((error as { name?: unknown }).name)
+    : "";
+
+  if (name === "NotAllowedError") return "policy-blocked";
+  if (name === "AbortError") return "transient";
+  return "other";
+}
+
+export function nextAuthoritativePlayRecoveryState(
+  _current: AuthoritativePlayRecoveryState,
+  event: AuthoritativePlayRecoveryEvent
+): AuthoritativePlayRecoveryState {
+  if (event === "transient-rejection") {
+    return { retryPending: true, policyBlocked: false };
+  }
+  if (event === "policy-rejection") {
+    return { retryPending: false, policyBlocked: true };
+  }
+  return { retryPending: false, policyBlocked: false };
+}
 
 export function isTimedSyncEventType(type: string): type is TimedSyncEventType {
   return type === "PLAY" || type === "PAUSE" || type === "SEEK" || type === "STATE";

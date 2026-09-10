@@ -62,7 +62,7 @@ class RoomPresenceServiceTest {
     }
 
     @Test
-    void reconnectWithinGraceKeepsLogicalParticipantWithoutDuplicateJoin() throws Exception {
+    void reconnectWithinGraceKeepsLogicalParticipantWithoutDuplicateJoin() {
         Room room = rooms.create("Test room");
         claimHost(room, "stable-client");
         Room.ParticipantRegistration initial = register(
@@ -71,25 +71,61 @@ class RoomPresenceServiceTest {
         register(room, "waiting-client", "Waiting User", "waiting-session");
 
         presence.scheduleDisconnect("old-session");
-        Thread.sleep(20);
+        assertThat(room.hasParticipant("stable-client")).isTrue();
+        assertThat(room.isHost("stable-client")).isTrue();
+        verify(liveKitScreenShare, never()).removeParticipant(room, "stable-client");
+
         Room.ParticipantRegistration replacement = register(
                 room, "stable-client", "Nova Nila", "new-session"
         );
 
-        Thread.sleep(120);
-        assertThat(initial.joined()).isTrue();
-        assertThat(replacement.joined()).isFalse();
-        assertThat(room.hasParticipant("stable-client")).isTrue();
-        assertThat(room.getClientIdForSession("old-session")).isNull();
-        assertThat(room.getClientIdForSession("new-session")).isEqualTo("stable-client");
-        assertThat(room.isHost("stable-client")).isTrue();
-        assertThat(room.isHost("waiting-client")).isFalse();
-        assertThat(chatService.history(room.getId())).isEmpty();
+        await().during(Duration.ofMillis(120)).atMost(Duration.ofSeconds(1)).untilAsserted(() -> {
+            assertThat(initial.joined()).isTrue();
+            assertThat(replacement.joined()).isFalse();
+            assertThat(room.hasParticipant("stable-client")).isTrue();
+            assertThat(room.getClientIdForSession("old-session")).isNull();
+            assertThat(room.getClientIdForSession("new-session")).isEqualTo("stable-client");
+            assertThat(room.isHost("stable-client")).isTrue();
+            assertThat(room.isHost("waiting-client")).isFalse();
+            assertThat(chatService.history(room.getId())).isEmpty();
+        });
+        verify(messaging, never()).convertAndSend(anyString(), any(Object.class));
+        verify(liveKitScreenShare, never()).removeParticipant(room, "stable-client");
+    }
+
+    @Test
+    void guestHostReconnectWithinGracePreservesTemporaryDriveAndFile() {
+        Room room = rooms.create("Test room");
+        room.claimHost("guest-client", "guest:owner");
+        presence.registerParticipant(
+                room, "guest-client", "guest:owner", "Guest Host", "old-session"
+        );
+        register(room, "waiting-client", "Waiting User", "waiting-session");
+        room.setFileId("guest-file");
+        room.setFileName("Guest Movie");
+        room.setDriveCredentials(
+                "guest:owner", "guest-access", System.currentTimeMillis() + 60_000
+        );
+
+        presence.scheduleDisconnect("old-session");
+        Room.ParticipantRegistration replacement = presence.registerParticipant(
+                room, "guest-client", "guest:owner", "Guest Host", "new-session"
+        );
+
+        await().during(Duration.ofMillis(120)).atMost(Duration.ofSeconds(1)).untilAsserted(() -> {
+            assertThat(replacement.joined()).isFalse();
+            assertThat(room.hasParticipant("guest-client")).isTrue();
+            assertThat(room.isHost("guest-client")).isTrue();
+            assertThat(room.hasFile()).isTrue();
+            assertThat(room.getFileId()).isEqualTo("guest-file");
+        });
+        verify(googleOAuth, never()).forgetTemporaryConnection("guest:owner");
+        verify(liveKitScreenShare, never()).removeParticipant(room, "guest-client");
         verify(messaging, never()).convertAndSend(anyString(), any(Object.class));
     }
 
     @Test
-    void replacementBeforeOldDisconnectDoesNotGenerateDepartureOrTransferHost() throws Exception {
+    void replacementBeforeOldDisconnectDoesNotGenerateDepartureOrTransferHost() {
         Room room = rooms.create("Test room");
         claimHost(room, "stable-client");
         register(room, "stable-client", "Host", "old-session");
@@ -99,15 +135,17 @@ class RoomPresenceServiceTest {
 
         presence.scheduleDisconnect("old-session");
         presence.scheduleDisconnect("old-session");
-        Thread.sleep(120);
 
-        assertThat(replacement.joined()).isFalse();
-        assertThat(room.getParticipants()).hasSize(2);
-        assertThat(room.isHost("stable-client")).isTrue();
-        assertThat(room.getClientIdForSession("new-session")).isEqualTo("stable-client");
-        assertThat(room.getClientIdForSession("old-session")).isNull();
-        assertThat(chatService.history(room.getId())).isEmpty();
+        await().during(Duration.ofMillis(120)).atMost(Duration.ofSeconds(1)).untilAsserted(() -> {
+            assertThat(replacement.joined()).isFalse();
+            assertThat(room.getParticipants()).hasSize(2);
+            assertThat(room.isHost("stable-client")).isTrue();
+            assertThat(room.getClientIdForSession("new-session")).isEqualTo("stable-client");
+            assertThat(room.getClientIdForSession("old-session")).isNull();
+            assertThat(chatService.history(room.getId())).isEmpty();
+        });
         verify(messaging, never()).convertAndSend(anyString(), any(Object.class));
+        verify(liveKitScreenShare, never()).removeParticipant(room, "stable-client");
     }
 
     @Test
@@ -133,6 +171,8 @@ class RoomPresenceServiceTest {
                 eq("/topic/room/" + room.getId()),
                 any(SyncEvent.class)
         );
+        verify(liveKitScreenShare, times(1)).removeParticipant(room, "stable-client");
+        verify(liveKitScreenShare, times(1)).closeRoom(room);
     }
 
     @Test
@@ -162,6 +202,7 @@ class RoomPresenceServiceTest {
                         && event.participants().stream().anyMatch(participant ->
                         participant.clientId().equals("oldest-client") && participant.host()))
         );
+        verify(liveKitScreenShare, times(1)).removeParticipant(room, "host-client");
     }
 
     @Test
@@ -187,6 +228,7 @@ class RoomPresenceServiceTest {
                 argThat((SyncEvent event) -> "PARTICIPANTS".equals(event.type())
                         && "oldest-client".equals(event.hostClientId()))
         );
+        verify(liveKitScreenShare, times(1)).removeParticipant(room, "host-client");
 
         Room.ParticipantRegistration rejoin = register(
                 room,
@@ -233,6 +275,8 @@ class RoomPresenceServiceTest {
                 .isEqualTo(RoomPresenceService.LeaveRoomResult.LEFT);
 
         assertThat(rooms.find(room.getId())).isEmpty();
+        verify(liveKitScreenShare, times(1)).removeParticipant(room, "host-client");
+        verify(liveKitScreenShare, times(1)).closeRoom(room);
         verify(messaging, never()).convertAndSend(
                 eq("/topic/room/" + room.getId()),
                 any(SyncEvent.class)
@@ -267,6 +311,8 @@ class RoomPresenceServiceTest {
                 eq("/topic/room/" + room.getId()),
                 argThat((SyncEvent event) -> "PARTICIPANTS".equals(event.type()))
         );
+        verify(liveKitScreenShare, times(1)).closeRoom(room);
+        verify(liveKitScreenShare, never()).removeParticipant(any(Room.class), anyString());
     }
 
     @Test
@@ -287,7 +333,7 @@ class RoomPresenceServiceTest {
     }
 
     @Test
-    void closeCancelsPendingReconnectGraceWithoutLaterHostTransfer() throws Exception {
+    void closeCancelsPendingReconnectGraceWithoutLaterHostTransfer() {
         Room room = rooms.create("Test room");
         claimHost(room, "host-client");
         register(room, "host-client", "Host", "host-session");
@@ -296,13 +342,15 @@ class RoomPresenceServiceTest {
 
         assertThat(presence.closeRoom(room.getId(), userFor("host-client"), "host-client"))
                 .isEqualTo(RoomPresenceService.CloseRoomResult.CLOSED);
-        Thread.sleep(120);
-
-        assertThat(rooms.find(room.getId())).isEmpty();
+        await().during(Duration.ofMillis(120)).atMost(Duration.ofSeconds(1)).untilAsserted(() ->
+                assertThat(rooms.find(room.getId())).isEmpty()
+        );
         verify(messaging, times(1)).convertAndSend(
                 eq("/topic/room/" + room.getId()),
                 any(SyncEvent.class)
         );
+        verify(liveKitScreenShare, times(1)).closeRoom(room);
+        verify(liveKitScreenShare, never()).removeParticipant(any(Room.class), anyString());
     }
 
     @Test
