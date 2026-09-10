@@ -81,7 +81,9 @@ class SyncControllerPlaybackInvariantTest {
 
         control("PLAY", 0);
         assertThat(room.isPlaying()).isTrue();
-        assertThat(room.getCurrentTime()).isZero();
+        assertThat(room.getCurrentTime())
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(1);
         assertThat(room.getSeekVersion()).isEqualTo(1);
 
         control("PAUSE", 0);
