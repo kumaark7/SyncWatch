@@ -1199,7 +1199,7 @@ function AuthenticatedApp({
   return (
     <main
       ref={appShellRef}
-      className={`appShell ${theaterMode ? "theater" : ""} ${fullscreenCanHostOverlay ? "fullscreenMode" : ""} ${!roomId ? "homeShell" : ""} ${hasWatchLayout ? "watchShell" : ""}`}
+      className={`appShell ${theaterMode ? "theater" : ""} ${fullscreenCanHostOverlay ? "fullscreenMode" : ""} ${!roomId ? "homeShell" : ""} ${roomId && !hasWatchLayout ? "roomEntryShell" : ""} ${hasWatchLayout ? "watchShell" : ""}`}
     >
       {hasWatchLayout && room && (
         <MobileRoomHeader

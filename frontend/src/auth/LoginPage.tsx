@@ -1,6 +1,7 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
+import MobilePageHeader from "../mobile/MobilePageHeader";
 
 type Props = {
   inviteRoomId: string;
@@ -59,6 +60,7 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
 
   return (
     <main className="loginShell">
+      <MobilePageHeader />
       <form className="loginCard" onSubmit={submit}>
         <div className="authHeading">
           <img className="authLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />

@@ -392,6 +392,7 @@ input, select {
 .mobileRoomActions,
 .mobileSyncStatus,
 .mobileBottomNav,
+.mobilePageHeader,
 .mobilePartySectionHeader,
 .mobileSectionTitle {
   display: none;
@@ -3297,15 +3298,6 @@ button.chatToastOpen:hover:not(:disabled) {
     height: 48px;
   }
 
-  .guestHomeLink {
-    top: 12px;
-    left: 12px;
-    padding: 0;
-  }
-
-  .guestHomeLabel {
-    display: none;
-  }
 }
 
 .toast {
@@ -3819,6 +3811,302 @@ button.chatToastOpen:hover:not(:disabled) {
 
   .chatToast {
     grid-template-columns: minmax(0, 1fr) 44px;
+  }
+}
+
+@media (max-width: 768px) {
+  .loginShell,
+  .homeShell,
+  .roomEntryShell {
+    min-height: 100dvh;
+  }
+
+  .loginShell {
+    display: block;
+    padding: 0 16px 24px;
+    background:
+      linear-gradient(180deg, rgba(26, 47, 88, 0.3), transparent 240px),
+      var(--bg);
+  }
+
+  .guestHomeLink {
+    display: none;
+  }
+
+  .mobilePageHeader {
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    width: calc(100% + 32px);
+    min-height: calc(58px + env(safe-area-inset-top, 0px));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 -16px 12px;
+    padding: calc(7px + env(safe-area-inset-top, 0px)) 14px 7px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(7, 10, 16, 0.97);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  }
+
+  .mobilePageHeader > img {
+    width: auto;
+    height: 34px;
+    max-width: min(144px, 46vw);
+    object-fit: contain;
+  }
+
+  .mobilePageHome {
+    min-width: 44px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: rgba(18, 24, 36, 0.92);
+    color: var(--text);
+    padding: 0 11px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .mobilePageHome:hover,
+  .mobilePageHome:focus-visible {
+    border-color: rgba(125, 162, 255, 0.68);
+    background: #151f33;
+  }
+
+  .loginCard {
+    width: min(480px, 100%);
+    gap: 12px;
+    margin: 0 auto;
+    padding: 8px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .loginCard .authLogo {
+    display: none;
+  }
+
+  .authHeading {
+    gap: 4px;
+  }
+
+  .loginCard h1 {
+    margin: 2px 0 4px;
+    font-size: 28px;
+    line-height: 1.08;
+  }
+
+  .loginCard p {
+    font-size: 14px;
+  }
+
+  .authModeTabs {
+    padding: 3px;
+  }
+
+  .authModeTabs button {
+    min-height: 40px;
+  }
+
+  .fieldLabel {
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .loginCard input {
+    min-height: 46px;
+  }
+
+  .loginButton {
+    min-height: 44px;
+  }
+
+  .guestJoinCard {
+    gap: 12px;
+  }
+
+  .homeShell,
+  .roomEntryShell {
+    padding: 0;
+    background:
+      linear-gradient(180deg, rgba(26, 47, 88, 0.26), transparent 240px),
+      var(--bg);
+  }
+
+  .homeShell > .topBar,
+  .roomEntryShell > .topBar {
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    width: 100%;
+    min-height: calc(58px + env(safe-area-inset-top, 0px));
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    margin: 0;
+    padding: calc(7px + env(safe-area-inset-top, 0px)) 12px 7px;
+    border: 0;
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 0;
+    background: rgba(7, 10, 16, 0.97);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  }
+
+  .homeShell .brandBlock,
+  .roomEntryShell .brandBlock {
+    width: auto;
+    min-width: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .homeShell .brandBlock .brandLogo,
+  .roomEntryShell .brandBlock .brandLogo {
+    width: auto;
+    height: 34px;
+    max-width: min(144px, 40vw);
+    flex: 0 1 auto;
+  }
+
+  .roomEntryShell .brandBlock .roomTitle {
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .homeShell .topActions,
+  .roomEntryShell .topActions {
+    width: auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .homeShell .connectionStatus,
+  .roomEntryShell .connectionStatus,
+  .roomEntryShell .theaterToggle,
+  .roomEntryShell .fullscreenToggle,
+  .roomEntryShell .userPill {
+    display: none;
+  }
+
+  .homeShell .topActions > *,
+  .homeShell .topActions > button,
+  .roomEntryShell .topActions > *,
+  .roomEntryShell .topActions > button {
+    width: auto;
+    min-width: 0;
+    min-height: 40px;
+    height: 40px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .homeShell .userPill {
+    max-width: 88px;
+  }
+
+  .homeShell .homePanel,
+  .roomEntryShell .homePanel {
+    width: min(560px, 100%);
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 14px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  .homeIntro h1,
+  .roomEntryShell .roomEntryCard h1 {
+    margin: 4px 0 6px;
+    font-size: 28px;
+    line-height: 1.08;
+  }
+
+  .homeIntro p,
+  .roomEntryShell .roomEntryCard p {
+    font-size: 14px;
+  }
+
+  .homeShell .roomEntryCard,
+  .roomEntryShell .roomEntryCard {
+    width: 100%;
+    gap: 10px;
+    align-self: start;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .homeShell .roomEntryCard input,
+  .roomEntryShell .roomEntryCard input {
+    min-height: 46px;
+  }
+
+  .homeShell .roomEntryCard button,
+  .roomEntryShell .roomEntryCard button {
+    min-height: 44px;
+  }
+
+  .homeShell .join,
+  .roomEntryShell .join {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .homeShell .join button,
+  .roomEntryShell .join button {
+    width: auto;
+    min-width: 92px;
+  }
+}
+
+@media (max-width: 360px) {
+  .mobilePageHome span {
+    display: none;
+  }
+
+  .homeShell .brandBlock .brandLogo,
+  .roomEntryShell .brandBlock .brandLogo {
+    max-width: 112px;
+  }
+
+  .homeShell .userPill {
+    max-width: 72px;
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+
+  .homeShell .topActions > button,
+  .roomEntryShell .topActions > button {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .roomEntryShell .brandBlock .roomTitle {
+    display: none;
   }
 }
 

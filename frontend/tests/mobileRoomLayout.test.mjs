@@ -7,6 +7,8 @@ const partyPanel = readFileSync(new URL("../src/party/PartyPanel.tsx", import.me
 const bottomNav = readFileSync(new URL("../src/mobile/MobileBottomNav.tsx", import.meta.url), "utf8");
 const roomSections = readFileSync(new URL("../src/mobile/MobileRoomSections.tsx", import.meta.url), "utf8");
 const roomHeader = readFileSync(new URL("../src/mobile/MobileRoomHeader.tsx", import.meta.url), "utf8");
+const pageHeader = readFileSync(new URL("../src/mobile/MobilePageHeader.tsx", import.meta.url), "utf8");
+const loginPage = readFileSync(new URL("../src/auth/LoginPage.tsx", import.meta.url), "utf8");
 const guestJoinPage = readFileSync(new URL("../src/auth/GuestJoinPage.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/style.css", import.meta.url), "utf8");
 
@@ -66,10 +68,22 @@ test("Chat and Call replace only the lower panel while the upper room area stays
   assert.match(styles, /\.partyPanel\[data-mobile-tab="call"\] \.partyCallPane/);
 });
 
-test("public guest join keeps a navigation-only Home link outside the form", () => {
-  assert.match(guestJoinPage, /<a className="guestHomeLink" href="\/" aria-label="Home">/);
-  assert.match(guestJoinPage, /<Home size=\{19\}/);
-  assert.doesNotMatch(guestJoinPage, /guestHomeLink[\s\S]{0,100}(onJoin|onSubmit|fetch)/);
+test("authentication and guest entry share a mobile brand header", () => {
+  assert.match(loginPage, /<MobilePageHeader \/>/);
+  assert.match(guestJoinPage, /<MobilePageHeader showHome \/>/);
+  assert.match(guestJoinPage, /className="guestHomeLink" href="\/" aria-label="Home"/);
+  assert.match(pageHeader, /className="mobilePageHeader"/);
+  assert.match(pageHeader, /syncwatch-logo\.png/);
+  assert.match(pageHeader, /className="mobilePageHome" href="\/" aria-label="Home"/);
+  assert.doesNotMatch(pageHeader, /onJoin|onSubmit|fetch/);
+  assert.match(styles, /@media \(max-width: 768px\) \{[\s\S]*?\.guestHomeLink \{[\s\S]*?display: none/);
+});
+
+test("Home and entry-page compaction is mobile-only", () => {
+  assert.match(app, /roomId && !hasWatchLayout \? "roomEntryShell"/);
+  assert.match(styles, /@media \(max-width: 768px\) \{[\s\S]*?\.loginShell,[\s\S]*?\.homeShell,[\s\S]*?\.roomEntryShell/);
+  assert.match(styles, /\.homeShell > \.topBar,[\s\S]*?\.roomEntryShell > \.topBar/);
+  assert.match(styles, /\.loginCard \{[\s\S]*?border: 0;[\s\S]*?background: transparent/);
 });
 
 test("mobile breakpoint reserves safe-area space for compact fixed navigation", () => {
