@@ -10,6 +10,7 @@ type Props = {
 export default function MediaInfo(props: Props) {
   return (
     <section className="mediaInfo">
+      <div className="mobileSectionTitle">Video source</div>
       <div className="mediaPrimary">
         <div className="eyebrow">Now playing</div>
         <h2 title={props.fileName || "No video selected"}>

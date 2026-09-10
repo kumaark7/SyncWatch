@@ -387,6 +387,16 @@ input, select {
   gap: var(--page-gap);
 }
 
+.mobileRoomHeader,
+.mobileRoomInfo,
+.mobileRoomActions,
+.mobileSyncStatus,
+.mobileBottomNav,
+.mobilePartySectionHeader,
+.mobileSectionTitle {
+  display: none;
+}
+
 .playerSurface {
   position: relative;
   padding: 8px;
@@ -825,6 +835,23 @@ input, select {
 
 .partyPanelContent {
   display: grid;
+}
+
+.partyPanelPane {
+  min-width: 0;
+  min-height: 0;
+  display: none;
+}
+
+.partyPanel[data-active-tab="people"] .partyPeoplePane,
+.partyPanel[data-active-tab="chat"] .partyChatPane,
+.partyPanel[data-active-tab="call"] .partyCallPane {
+  display: grid;
+}
+
+.partyChatPane,
+.partyCallPane {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .peoplePanel {
@@ -1902,6 +1929,656 @@ input, select {
   border-top: 1px solid var(--border);
 }
 
+@media (max-width: 768px) {
+  :root {
+    --mobile-nav-height: 62px;
+    --mobile-header-height: 58px;
+  }
+
+  .appShell.watchShell:not(.theater):not(.fullscreenMode) {
+    min-height: 100dvh;
+    padding: 0 0 calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) > .topBar {
+    display: none;
+  }
+
+  .mobileRoomHeader {
+    position: sticky;
+    top: 0;
+    z-index: 80;
+    min-height: calc(var(--mobile-header-height) + env(safe-area-inset-top, 0px));
+    display: grid;
+    grid-template-columns: minmax(82px, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 6px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(7, 10, 16, 0.97);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  }
+
+  .theater .mobileRoomHeader,
+  .fullscreenMode .mobileRoomHeader {
+    display: none;
+  }
+
+  .mobileRoomLogo {
+    width: auto;
+    height: 34px;
+    max-width: min(132px, 34vw);
+    object-fit: contain;
+  }
+
+  .mobileHeaderRoom {
+    min-width: 0;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 4px 0 9px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: rgba(13, 18, 28, 0.88);
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .mobileHeaderRoom strong {
+    overflow: hidden;
+    color: #f4f7ff;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileHeaderRoom button {
+    width: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    height: 36px;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .mobileHeaderActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mobileOnlineCount,
+  .mobileIconButton {
+    min-height: 44px;
+    height: 44px;
+    border-radius: 9px;
+    padding: 0 11px;
+  }
+
+  .mobileOnlineCount {
+    gap: 7px;
+    color: #dbe6fb;
+    font-size: 14px;
+    font-weight: 750;
+  }
+
+  .mobileOnlineDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  .mobileIconButton {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+
+  .mobileOverflow {
+    position: relative;
+  }
+
+  .mobileOverflowMenu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 90;
+    width: min(248px, calc(100vw - 24px));
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #0b111c;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.52);
+  }
+
+  .mobileOverflowMenu button {
+    min-height: 44px;
+    justify-content: flex-start;
+    border-color: transparent;
+    background: transparent;
+    padding: 0 12px;
+    color: #dce5f5;
+  }
+
+  .mobileOverflowMenu button.danger {
+    color: #ffabb2;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .watchLayout {
+    width: 100%;
+    display: block;
+    margin: 0;
+    padding: 10px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .watchColumn {
+    display: grid;
+    gap: 8px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .watchLayout[data-mobile-tab="chat"] .mediaInfo,
+  .watchShell:not(.theater):not(.fullscreenMode) .watchLayout[data-mobile-tab="call"] .mediaInfo {
+    display: none;
+  }
+
+  .mobileRoomInfo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    background: rgba(13, 18, 28, 0.9);
+  }
+
+  .mobileRoomTitles {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+  }
+
+  .mobileRoomTitles > span {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileRoomTitles > strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileRole {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #b8c4d8;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .mobileRole.host {
+    color: var(--warning);
+  }
+
+  .mobileRoomStatusGroup {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .playerSurface {
+    padding: 4px;
+    border-radius: 12px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .video,
+  .watchShell:not(.theater):not(.fullscreenMode) .videoPlaceholder {
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+    border-radius: 9px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .videoPlaceholder {
+    padding: 20px 20px 62px;
+    font-size: 14px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .emptyPlayerAction {
+    top: auto;
+    right: 16px;
+    bottom: 14px;
+    left: 16px;
+    transform: none;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .emptyPlayerAction button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .mobileRoomActions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+    gap: 6px;
+  }
+
+  .mobileRoomActions button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .mobileRoomActions button.danger {
+    border-color: rgba(255, 107, 117, 0.4);
+    background: rgba(88, 25, 33, 0.25);
+    color: #ffabb2;
+  }
+
+  @media (max-width: 360px) {
+    .mobileRoomHeader {
+      grid-template-columns: minmax(76px, 1fr) auto auto;
+      gap: 5px;
+      padding-right: 7px;
+      padding-left: 7px;
+    }
+
+    .mobileRoomLogo {
+      height: 30px;
+      max-width: 92px;
+    }
+
+    .mobileHeaderRoom {
+      padding-left: 7px;
+    }
+
+    .mobileHeaderRoom > span,
+    .mobileOnlineCount svg {
+      display: none;
+    }
+
+    .mobileHeaderActions {
+      gap: 5px;
+    }
+
+    .mobileOnlineCount {
+      min-width: 40px;
+      padding: 0 8px;
+      gap: 5px;
+    }
+
+    .mobileRoomInfo {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 5px;
+    }
+
+    .mobileRoomStatusGroup {
+      justify-content: space-between;
+    }
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .mediaInfo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 9px 10px;
+  }
+
+  .mobileSectionTitle {
+    display: block;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 750;
+  }
+
+  .watchShell .mediaPrimary .eyebrow {
+    display: none;
+  }
+
+  .watchShell .mediaInfo h2 {
+    margin-top: 0;
+    font-size: 14px;
+  }
+
+  .watchShell .mediaPrimary p {
+    display: none;
+  }
+
+  .watchShell .mediaDrive {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    padding: 6px 0 0;
+    border-top: 1px solid var(--border-soft);
+    border-left: 0;
+  }
+
+  .watchShell .driveIcon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .watchShell .googleActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .watchShell .googleActions:has(> :only-child) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchShell .googleActions button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 10px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .mobileSyncStatus {
+    width: fit-content;
+    min-height: 26px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    background: rgba(13, 18, 28, 0.74);
+  }
+
+  .mobileSyncIcon {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 50%;
+    color: var(--warning);
+  }
+
+  .mobileSyncStatus.connected .mobileSyncIcon {
+    color: var(--success);
+  }
+
+  .mobileSyncStatus strong {
+    font-size: 11px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel {
+    position: static;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    display: block;
+    margin-top: 8px;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .partyPanelHeader,
+  .partyTabs {
+    display: none;
+  }
+
+  .partyPanelContent {
+    display: grid;
+    gap: 8px;
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel .partyPanelPane {
+    min-width: 0;
+    min-height: 0;
+    display: none;
+    padding: 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    background: rgba(13, 18, 28, 0.92);
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel[data-mobile-tab="room"] .partyPeoplePane,
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel[data-mobile-tab="room"] .partyChatPane,
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel[data-mobile-tab="chat"] .partyChatPane,
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel[data-mobile-tab="call"] .partyCallPane {
+    display: grid;
+  }
+
+  .partyPanel[data-mobile-tab="room"] .partyPeoplePane,
+  .partyPanel[data-mobile-tab="room"] .partyChatPane {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .mobilePartySectionHeader {
+    min-width: 0;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .mobilePartySectionHeader > span:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+  }
+
+  .mobilePartySectionHeader h2 {
+    margin: 0;
+    color: #fff;
+    font-size: 16px;
+  }
+
+  .mobilePartySectionHeader > span:last-child:not(:first-child),
+  .mobilePartySectionHeader > small {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .partyPeoplePane .peoplePanel {
+    display: block;
+  }
+
+  .partyPeoplePane .roomCard {
+    display: none;
+  }
+
+  .participantList {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .participant {
+    min-height: 62px;
+    border-radius: 10px;
+  }
+
+  .participantHostTransfer {
+    min-height: 40px;
+  }
+
+  .partyPanel[data-mobile-tab="room"] .partyChatPane {
+    min-height: 300px;
+    height: min(44dvh, 360px);
+  }
+
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel[data-mobile-tab="chat"],
+  .watchShell:not(.theater):not(.fullscreenMode) .partyPanel[data-mobile-tab="call"] {
+    height: clamp(360px, 58dvh, 520px);
+    margin-top: 0;
+  }
+
+  .partyPanel[data-mobile-tab="chat"] .partyPanelContent,
+  .partyPanel[data-mobile-tab="call"] .partyPanelContent,
+  .partyPanel[data-mobile-tab="chat"] .partyChatPane,
+  .partyPanel[data-mobile-tab="call"] .partyCallPane {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .partyPanel[data-mobile-tab="chat"] .partyChatPane,
+  .partyPanel[data-mobile-tab="call"] .partyCallPane {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .chatPanel,
+  .callPanel {
+    min-height: 0;
+  }
+
+  .chatComposer textarea {
+    min-height: 76px;
+    max-height: 132px;
+  }
+
+  .chatComposer .compactButton {
+    min-height: 44px;
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callTilesCount1 {
+    grid-template-rows: minmax(220px, 1fr);
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callTilesCount2 {
+    grid-template-rows: repeat(2, minmax(150px, 1fr));
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callTilesCount3 {
+    grid-template-rows: repeat(3, minmax(128px, 1fr));
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callControls {
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+  }
+
+  .mobileBottomNav {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 75;
+    min-height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 4px 8px env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid rgba(125, 162, 255, 0.24);
+    background: rgba(8, 12, 20, 0.98);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.32);
+  }
+
+  .mobileBottomNav button {
+    position: relative;
+    min-width: 0;
+    min-height: 54px;
+    display: grid;
+    place-content: center;
+    gap: 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    padding: 4px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: normal;
+  }
+
+  .mobileBottomNav button.active {
+    background: rgba(125, 162, 255, 0.12);
+    color: #f3f6ff;
+  }
+
+  .mobileBottomNav button.active::before {
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 50%;
+    width: 28px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--accent);
+    transform: translateX(-50%);
+  }
+
+  .mobileNavIcon {
+    position: relative;
+    width: 24px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    margin: 0 auto;
+  }
+
+  .mobileNavBadge {
+    position: absolute;
+    top: -5px;
+    right: -10px;
+    min-width: 17px;
+    height: 17px;
+    display: inline-grid;
+    place-items: center;
+    border: 2px solid #080c14;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    padding: 0 3px;
+    font-size: 9px;
+  }
+
+  .watchShell .toast {
+    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + 12px);
+  }
+
+  .watchShell .chatToastStack {
+    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + 12px);
+  }
+}
+
+@media (max-width: 360px) {
+  .mobileRoomLogo {
+    max-width: 132px;
+  }
+
+  .mobileOnlineCount {
+    padding: 0 8px;
+  }
+
+  .mobileRole {
+    max-width: 112px;
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callControls {
+    grid-template-columns: repeat(3, minmax(44px, 1fr));
+  }
+}
+
 .roomCodeRow {
   justify-content: space-between;
 }
@@ -2487,6 +3164,32 @@ button.chatToastOpen:hover:not(:disabled) {
     var(--bg);
 }
 
+.guestHomeLink {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #0d1421;
+  color: var(--text);
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.guestHomeLink:hover,
+.guestHomeLink:focus-visible {
+  border-color: rgba(125, 162, 255, 0.68);
+  background: #151f33;
+}
+
 .loginCard {
   width: min(420px, 100%);
   display: grid;
@@ -2592,6 +3295,16 @@ button.chatToastOpen:hover:not(:disabled) {
 
   .authLogo {
     height: 48px;
+  }
+
+  .guestHomeLink {
+    top: 12px;
+    left: 12px;
+    padding: 0;
+  }
+
+  .guestHomeLabel {
+    display: none;
   }
 }
 

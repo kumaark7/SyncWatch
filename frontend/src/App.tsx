@@ -11,6 +11,12 @@ import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
 import DrivePicker from "./DrivePicker";
 import { generateDisplayName, generateRoomName } from "./generatedNames";
+import MobileBottomNav, { type MobileTab } from "./mobile/MobileBottomNav";
+import MobileRoomHeader from "./mobile/MobileRoomHeader";
+import {
+  MobileRoomActions,
+  MobileRoomInfo
+} from "./mobile/MobileRoomSections";
 import PartyPanel from "./party/PartyPanel";
 import ChatToastStack from "./party/chat/ChatToast";
 import type { ChatMessage } from "./party/chat/types";
@@ -33,6 +39,7 @@ const DRIVE_SCOPE =
 
 const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
 const SESSION_REVALIDATION_INTERVAL_MS = 5 * 60 * 1000;
+const MOBILE_ROOM_MEDIA_QUERY = "(max-width: 768px)";
 
 type GoogleConnection = {
   accessToken: string;
@@ -59,6 +66,21 @@ function googleApisReady() {
     window.google?.accounts?.oauth2 &&
       window.gapi
   );
+}
+
+function useMobileRoomLayout() {
+  const [mobile, setMobile] = useState(
+    () => window.matchMedia(MOBILE_ROOM_MEDIA_QUERY).matches
+  );
+
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_ROOM_MEDIA_QUERY);
+    const update = () => setMobile(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return mobile;
 }
 
 function AppContent() {
@@ -197,6 +219,9 @@ function AuthenticatedApp({
   const [partyTab, setPartyTab] =
     useState<PartyTab>("people");
 
+  const [mobileTab, setMobileTab] =
+    useState<MobileTab>("room");
+
   const [chatUnreadCount, setChatUnreadCount] =
     useState(0);
 
@@ -207,6 +232,7 @@ function AuthenticatedApp({
   const videoPlayerRef = useRef<VideoPlayerHandle>(null);
   const lastUnreadMessageIdRef = useRef<string | null>(null);
   const fullscreenElement = useFullscreenState();
+  const mobileRoomLayout = useMobileRoomLayout();
 
   const [googleConnection, setGoogleConnection] =
     useState<GoogleConnection | null>(null);
@@ -253,7 +279,9 @@ function AuthenticatedApp({
         || fullscreenElement.contains(appShellRef.current))
   );
   const partyRailHidden = theaterMode || fullscreenActive;
-  const chatVisible = partyTab === "chat" && !partyRailHidden;
+  const chatVisible = !partyRailHidden && (
+    mobileRoomLayout ? mobileTab !== "call" : partyTab === "chat"
+  );
 
   useEffect(() => {
     if (!roomId) {
@@ -322,6 +350,7 @@ function AuthenticatedApp({
     lastUnreadMessageIdRef.current = null;
     setChatUnreadCount(0);
     setPartyTab("people");
+    setMobileTab("room");
     setSelfViewHidden(false);
   }, [roomId]);
 
@@ -993,6 +1022,7 @@ function AuthenticatedApp({
     setParticipants([]);
     setTheaterMode(false);
     setPartyTab("people");
+    setMobileTab("room");
     setChatUnreadCount(0);
     setSelfViewHidden(false);
     setToast("");
@@ -1104,6 +1134,35 @@ function AuthenticatedApp({
     }
   }
 
+  function selectMobileTab(tab: MobileTab) {
+    setMobileTab(tab);
+    if (tab === "chat") {
+      setChatUnreadCount(0);
+    }
+  }
+
+  function showMobileParticipants() {
+    setMobileTab("room");
+    window.setTimeout(() => {
+      document.getElementById("room-participants")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 0);
+  }
+
+  function toggleChatView() {
+    if (mobileRoomLayout) {
+      selectMobileTab(mobileTab === "chat" ? "room" : "chat");
+      return;
+    }
+
+    setPartyTab((current) => current === "chat" ? "people" : "chat");
+    if (partyTab !== "chat") {
+      setChatUnreadCount(0);
+    }
+  }
+
   const canManageGoogle = Boolean(room?.isHost);
   const googleActions = canManageGoogle ? (
     !googleConnection ? (
@@ -1142,6 +1201,26 @@ function AuthenticatedApp({
       ref={appShellRef}
       className={`appShell ${theaterMode ? "theater" : ""} ${fullscreenCanHostOverlay ? "fullscreenMode" : ""} ${!roomId ? "homeShell" : ""} ${hasWatchLayout ? "watchShell" : ""}`}
     >
+      {hasWatchLayout && room && (
+        <MobileRoomHeader
+          roomId={roomId}
+          participantCount={participants.length}
+          isHost={room.isHost}
+          canCloseRoom={!guestSession}
+          hasFile={room.hasFile}
+          theaterMode={theaterMode}
+          fullscreenActive={fullscreenCanHostOverlay}
+          closingVideo={closingVideo}
+          onShowParticipants={showMobileParticipants}
+          onCopyRoom={() => void copyRoomCode()}
+          onCopyInvite={() => void copyInvite()}
+          onToggleTheater={() => void toggleTheaterMode()}
+          onToggleFullscreen={() => void toggleContainerFullscreen()}
+          onLeaveRoom={() => void leaveRoom()}
+          onCloseVideo={() => void closeVideo()}
+          onCloseRoom={() => void closeRoom()}
+        />
+      )}
       <header className="topBar">
         <div className="brandBlock">
           <img
@@ -1302,17 +1381,18 @@ function AuthenticatedApp({
           <PushToTalkProvider>
             <RoomKeyboardShortcuts
               playerRef={videoPlayerRef}
-              onToggleChat={() => {
-                setPartyTab((current) => current === "chat" ? "people" : "chat");
-                if (partyTab !== "chat") {
-                  setChatUnreadCount(0);
-                }
-              }}
+              onToggleChat={toggleChatView}
               onToggleFullscreen={() => void toggleContainerFullscreen()}
               onError={showToast}
             />
-            <section className="watchLayout">
+            <section className="watchLayout" data-mobile-tab={mobileTab}>
               <div className="watchColumn">
+                <MobileRoomInfo
+                  roomName={room.roomName}
+                  fileName={room.fileName}
+                  isHost={room.isHost}
+                  connected={connected}
+                />
                 <section className="playerSurface">
                   <VideoPlayer
                     ref={videoPlayerRef}
@@ -1348,6 +1428,18 @@ function AuthenticatedApp({
                   )}
                 </section>
 
+                <MobileRoomActions
+                  isHost={room.isHost}
+                  canCloseRoom={!guestSession}
+                  hasFile={room.hasFile}
+                  fullscreenActive={fullscreenCanHostOverlay}
+                  closingVideo={closingVideo}
+                  onToggleFullscreen={() => void toggleContainerFullscreen()}
+                  onLeaveRoom={() => void leaveRoom()}
+                  onCloseVideo={() => void closeVideo()}
+                  onCloseRoom={() => void closeRoom()}
+                />
+
                 <MediaInfo
                   fileName={room.fileName}
                   googleConnected={Boolean(googleConnection)}
@@ -1364,6 +1456,7 @@ function AuthenticatedApp({
                   connected={chatReady}
                   chatMessages={chatMessages}
                   activeTab={partyTab}
+                  mobileTab={mobileTab}
                   unreadCount={chatUnreadCount}
                   selfViewHidden={selfViewHidden}
                   onTabChange={setPartyTab}
@@ -1379,6 +1472,14 @@ function AuthenticatedApp({
               )}
             </section>
 
+            {!partyRailHidden && (
+              <MobileBottomNav
+                activeTab={mobileTab}
+                unreadCount={chatUnreadCount}
+                onTabChange={selectMobileTab}
+              />
+            )}
+
             <FloatingCallWindow
               roomId={roomId}
               visible={theaterMode || fullscreenCanHostOverlay}
@@ -1392,7 +1493,13 @@ function AuthenticatedApp({
               clientId={clientId}
               chatVisible={chatVisible}
               suspended={fullscreenActive && !fullscreenCanHostOverlay}
-              onOpenChat={!partyRailHidden ? () => setPartyTab("chat") : undefined}
+              onOpenChat={!partyRailHidden ? () => {
+                if (mobileRoomLayout) {
+                  selectMobileTab("chat");
+                } else {
+                  setPartyTab("chat");
+                }
+              } : undefined}
             />
           </PushToTalkProvider>
         </CallProvider>

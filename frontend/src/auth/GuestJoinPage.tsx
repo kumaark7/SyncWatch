@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { Home } from "lucide-react";
 import { generateDisplayName } from "../generatedNames";
 import { getGuestRoom } from "./authApi";
 
@@ -74,6 +75,10 @@ export default function GuestJoinPage({ initialRoomId, onJoin }: Props) {
 
   return (
     <main className="loginShell">
+      <a className="guestHomeLink" href="/" aria-label="Home">
+        <Home size={19} aria-hidden="true" />
+        <span className="guestHomeLabel">Home</span>
+      </a>
       <form className="loginCard guestJoinCard" onSubmit={submit}>
         <div className="authHeading">
           <img className="authLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />
