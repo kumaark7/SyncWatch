@@ -10,8 +10,10 @@ public record SyncEvent(
         double time,
         boolean playing,
         String fileName,
+        boolean hasFile,
         long serverTime,
         long mediaVersion,
+        long playbackRevision,
         String senderClientId,
         String hostClientId,
         Long seekId,
@@ -21,13 +23,16 @@ public record SyncEvent(
         boolean guestScreenSharingAllowed
 ) {
     public static SyncEvent state(Room room) {
-        return new SyncEvent(
+        synchronized (room) {
+            return new SyncEvent(
                 "STATE",
                 room.getCurrentTime(),
                 room.isPlaying(),
                 room.getFileName(),
+                room.hasFile(),
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 null,
                 room.getHostClientId(),
                 room.getSeekVersion(),
@@ -35,17 +40,21 @@ public record SyncEvent(
                 room.getScreenSharerClientId(),
                 room.getParticipantName(room.getScreenSharerClientId()),
                 room.isGuestScreenSharingAllowed()
-        );
+            );
+        }
     }
 
     public static SyncEvent control(String type, Room room, String senderClientId) {
-        return new SyncEvent(
+        synchronized (room) {
+            return new SyncEvent(
                 type,
                 room.getCurrentTime(),
                 room.isPlaying(),
                 room.getFileName(),
+                room.hasFile(),
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
@@ -53,17 +62,21 @@ public record SyncEvent(
                 room.getScreenSharerClientId(),
                 room.getParticipantName(room.getScreenSharerClientId()),
                 room.isGuestScreenSharingAllowed()
-        );
+            );
+        }
     }
 
     public static SyncEvent fileSelected(Room room, String senderClientId) {
-        return new SyncEvent(
+        synchronized (room) {
+            return new SyncEvent(
                 "FILE_SELECTED",
                 0,
                 false,
                 room.getFileName(),
+                room.hasFile(),
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
@@ -71,17 +84,21 @@ public record SyncEvent(
                 room.getScreenSharerClientId(),
                 room.getParticipantName(room.getScreenSharerClientId()),
                 room.isGuestScreenSharingAllowed()
-        );
+            );
+        }
     }
 
     public static SyncEvent fileCleared(Room room, String senderClientId) {
-        return new SyncEvent(
+        synchronized (room) {
+            return new SyncEvent(
                 "FILE_CLEARED",
                 0,
                 false,
                 null,
+                false,
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
@@ -89,7 +106,8 @@ public record SyncEvent(
                 room.getScreenSharerClientId(),
                 room.getParticipantName(room.getScreenSharerClientId()),
                 room.isGuestScreenSharingAllowed()
-        );
+            );
+        }
     }
 
     public static SyncEvent participants(Room room) {
@@ -98,8 +116,10 @@ public record SyncEvent(
                 0,
                 false,
                 null,
+                room.hasFile(),
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 null,
                 room.getHostClientId(),
                 room.getSeekVersion(),
@@ -116,8 +136,10 @@ public record SyncEvent(
                 room.getCurrentTime(),
                 false,
                 room.getFileName(),
+                room.hasFile(),
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),
@@ -134,8 +156,10 @@ public record SyncEvent(
                 room.getCurrentTime(),
                 room.isPlaying(),
                 room.getFileName(),
+                room.hasFile(),
                 System.currentTimeMillis(),
                 room.getMediaVersion(),
+                room.getPlaybackRevision(),
                 senderClientId,
                 room.getHostClientId(),
                 room.getSeekVersion(),

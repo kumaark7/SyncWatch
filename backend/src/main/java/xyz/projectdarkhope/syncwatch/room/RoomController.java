@@ -193,18 +193,22 @@ public class RoomController {
             return ResponseEntity.status(401).body(Map.of("error", error.getMessage()));
         }
 
-        room.setFileId(request.fileId());
-        room.setFileName(
-                request.fileName() == null || request.fileName().isBlank()
-                        ? "Google Drive video"
-                        : request.fileName()
-        );
-        room.setDriveCredentials(ownerId, credentials.accessToken(), credentials.expiresAt());
-        room.resetPlayback();
+        SyncEvent fileSelectedEvent;
+        synchronized (room) {
+            room.setFileId(request.fileId());
+            room.setFileName(
+                    request.fileName() == null || request.fileName().isBlank()
+                            ? "Google Drive video"
+                            : request.fileName()
+            );
+            room.setDriveCredentials(ownerId, credentials.accessToken(), credentials.expiresAt());
+            room.resetPlayback();
+            fileSelectedEvent = SyncEvent.fileSelected(room, request.clientId());
+        }
 
         messaging.convertAndSend(
                 "/topic/room/" + room.getId(),
-                SyncEvent.fileSelected(room, request.clientId())
+                fileSelectedEvent
         );
 
         return ResponseEntity.ok(RoomResponse.from(room, request.clientId()));
@@ -275,11 +279,15 @@ public class RoomController {
                 );
             }
 
-            room.clearFile();
+            SyncEvent fileClearedEvent;
+            synchronized (room) {
+                room.clearFile();
+                fileClearedEvent = SyncEvent.fileCleared(room, clientId);
+            }
 
             messaging.convertAndSend(
                     "/topic/room/" + room.getId(),
-                    SyncEvent.fileCleared(room, clientId)
+                    fileClearedEvent
             );
 
             return ResponseEntity.ok(

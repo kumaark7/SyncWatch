@@ -70,14 +70,17 @@ class SyncControllerPlaybackInvariantTest {
 
         assertThat(room.getCurrentTime()).isZero();
         assertThat(room.getSeekVersion()).isEqualTo(1);
+        assertThat(room.getPlaybackRevision()).isEqualTo(2);
 
         SyncEvent stateAtZero = SyncEvent.state(room);
         assertThat(stateAtZero.time()).isZero();
         assertThat(stateAtZero.seekId()).isEqualTo(1);
+        assertThat(stateAtZero.playbackRevision()).isEqualTo(2);
 
         RoomResponse reconnectState = RoomResponse.from(room, "client");
         assertThat(reconnectState.currentTime()).isZero();
         assertThat(reconnectState.seekId()).isEqualTo(1);
+        assertThat(reconnectState.playbackRevision()).isEqualTo(2);
 
         control("PLAY", 0);
         assertThat(room.isPlaying()).isTrue();
@@ -85,11 +88,13 @@ class SyncControllerPlaybackInvariantTest {
                 .isGreaterThanOrEqualTo(0)
                 .isLessThan(1);
         assertThat(room.getSeekVersion()).isEqualTo(1);
+        assertThat(room.getPlaybackRevision()).isEqualTo(3);
 
         control("PAUSE", 0);
         assertThat(room.isPlaying()).isFalse();
         assertThat(room.getCurrentTime()).isZero();
         assertThat(room.getSeekVersion()).isEqualTo(1);
+        assertThat(room.getPlaybackRevision()).isEqualTo(4);
     }
 
     @Test

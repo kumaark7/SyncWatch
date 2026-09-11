@@ -53,13 +53,33 @@ function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
     .slice(-100);
 }
 
-export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: string | null) {
+export function useRoomSocket(
+  roomId: string,
+  nameTag: string,
+  sessionClientId: string | null,
+  acceptEvent?: (event: SyncEvent) => boolean
+) {
   const clientRef = useRef<Client | null>(null);
   const [clientId, setClientId] = useState(() => getClientId(sessionClientId));
   const clientIdRef = useRef(clientId);
   const roomJoinedRef = useRef(false);
+  const connectionInputRef = useRef({ roomId: "", nameTag: "", generation: 0 });
+  if (connectionInputRef.current.roomId !== roomId
+      || connectionInputRef.current.nameTag !== nameTag) {
+    connectionInputRef.current = {
+      roomId,
+      nameTag,
+      generation: connectionInputRef.current.generation + 1
+    };
+  }
+  const requestedConnectionGeneration = connectionInputRef.current.generation;
 
   const [connected, setConnected] = useState(false);
+  const [connectionSnapshot, setConnectionSnapshot] = useState({
+    roomId: "",
+    version: 0,
+    generation: 0
+  });
   const [roomJoined, setRoomJoined] = useState(false);
   const [lastEvent, setLastEvent] = useState<SyncEvent | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -156,6 +176,7 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
         client.subscribe(`/topic/room/${roomId}`, (message) => {
           if (disposed) return;
           const event = JSON.parse(message.body) as SyncEvent;
+          if (acceptEvent && !acceptEvent(event)) return;
           if (event.type === "PARTICIPANTS") {
             const joined = Boolean(
               event.participants?.some(
@@ -182,9 +203,15 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
             time: 0,
             playing: false,
             clientId: clientIdRef.current,
-            nameTag
+            nameTag,
+            clientSnapshotSupported: true
           })
         });
+        setConnectionSnapshot((current) => ({
+          roomId,
+          version: current.version + 1,
+          generation: requestedConnectionGeneration
+        }));
       },
 
       onHeartbeatLost: () => {
@@ -230,7 +257,7 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
       setConnected(false);
       void client.deactivate().catch(() => diagnose("deactivation-failed"));
     };
-  }, [roomId, nameTag]);
+  }, [roomId, nameTag, acceptEvent, requestedConnectionGeneration]);
 
   const sendControl = useCallback(
     (
@@ -317,6 +344,10 @@ export function useRoomSocket(roomId: string, nameTag: string, sessionClientId: 
 
   return {
     connected,
+    connectionVersion: connectionSnapshot.version,
+    connectedRoomId: connectionSnapshot.roomId,
+    connectedConnectionGeneration: connectionSnapshot.generation,
+    requestedConnectionGeneration,
     chatReady: connected && roomJoined,
     lastEvent,
     sendControl,

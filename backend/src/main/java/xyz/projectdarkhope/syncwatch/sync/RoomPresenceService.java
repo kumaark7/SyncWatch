@@ -329,11 +329,15 @@ public class RoomPresenceService {
         if (!ownerId.equals(room.getDriveOwnerUserId())) {
             return;
         }
-        room.clearFile();
+        SyncEvent fileClearedEvent;
+        synchronized (room) {
+            room.clearFile();
+            fileClearedEvent = SyncEvent.fileCleared(room, null);
+        }
         if (rooms.find(room.getId()).orElse(null) == room) {
             messaging.convertAndSend(
                     "/topic/room/" + room.getId(),
-                    SyncEvent.fileCleared(room, null)
+                    fileClearedEvent
             );
         }
     }

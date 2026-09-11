@@ -10,6 +10,7 @@ public record RoomResponse(
         long serverTime,
         long seekId,
         long mediaVersion,
+        long playbackRevision,
         boolean hostAssigned,
         boolean isHost,
         String screenSharerClientId,
@@ -17,21 +18,24 @@ public record RoomResponse(
         boolean guestScreenSharingAllowed
 ) {
     public static RoomResponse from(Room room, String clientId) {
-        return new RoomResponse(
-                room.getId(),
-                room.getName(),
-                room.getFileName(),
-                room.hasFile(),
-                room.isPlaying(),
-                room.getCurrentTime(),
-                System.currentTimeMillis(),
-                room.getSeekVersion(),
-                room.getMediaVersion(),
-                room.hasHost(),
-                room.isHost(clientId),
-                room.getScreenSharerClientId(),
-                room.getParticipantName(room.getScreenSharerClientId()),
-                room.isGuestScreenSharingAllowed()
-        );
+        synchronized (room) {
+            return new RoomResponse(
+                    room.getId(),
+                    room.getName(),
+                    room.getFileName(),
+                    room.hasFile(),
+                    room.isPlaying(),
+                    room.getCurrentTime(),
+                    System.currentTimeMillis(),
+                    room.getSeekVersion(),
+                    room.getMediaVersion(),
+                    room.getPlaybackRevision(),
+                    room.hasHost(),
+                    room.isHost(clientId),
+                    room.getScreenSharerClientId(),
+                    room.getParticipantName(room.getScreenSharerClientId()),
+                    room.isGuestScreenSharingAllowed()
+            );
+        }
     }
 }

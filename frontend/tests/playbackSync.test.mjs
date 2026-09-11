@@ -70,7 +70,124 @@ test("video source is generation-stable and participant events never reach playb
   const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
   assert.match(videoPlayer, /key=\{sourceIdentity\}/);
   assert.match(videoPlayer, /\?media=\$\{props\.mediaVersion\}/);
-  assert.match(app, /lastEvent\?\.type === "PARTICIPANTS"[\s\S]*"SCREEN_SHARE" \? null : lastEvent/);
+  assert.match(videoPlayer, /event\.mediaVersion !== mediaVersionRef\.current/);
+  assert.match(app, /syncEvent=\{acceptedPlaybackEvent\}/);
+});
+
+test("playback revision rejects stale controls across event types", () => {
+  const play20 = { mediaVersion: 4, playbackRevision: 20, serverTime: 2_000 };
+  assert.equal(playback.shouldAcceptPlaybackOrder(null, play20, "PLAY"), true);
+  assert.equal(playback.shouldAcceptPlaybackOrder(
+    play20,
+    { ...play20, playbackRevision: 19, serverTime: 2_100 },
+    "PAUSE"
+  ), false);
+  assert.equal(playback.shouldAcceptPlaybackOrder(
+    { ...play20, playbackRevision: 44 },
+    { ...play20, playbackRevision: 43, serverTime: 3_000 },
+    "STATE"
+  ), false);
+});
+
+test("newer pause, seek and explicit zero remain authoritative", () => {
+  const current = { mediaVersion: 2, playbackRevision: 30, serverTime: 1_000 };
+  const pause = { ...current, playbackRevision: 31, serverTime: 1_100 };
+  const seekZero = { ...current, playbackRevision: 32, serverTime: 1_200 };
+
+  assert.equal(playback.shouldAcceptPlaybackOrder(current, pause, "PAUSE"), true);
+  assert.equal(playback.shouldAcceptPlaybackOrder(pause, current, "PLAY"), false);
+  assert.equal(playback.shouldAcceptPlaybackOrder(pause, seekZero, "SEEK"), true);
+  assert.equal(playback.protectedAuthoritativeTime("SEEK", 0, 300, true), 0);
+});
+
+test("media generations reset ordering and equal revision accepts only fresher state", () => {
+  const oldMedia = { mediaVersion: 8, playbackRevision: 99, serverTime: 5_000 };
+  const newMedia = { mediaVersion: 9, playbackRevision: 1, serverTime: 5_100 };
+  assert.equal(playback.shouldAcceptPlaybackOrder(oldMedia, newMedia, "STATE"), true);
+  assert.equal(playback.shouldAcceptPlaybackOrder(newMedia, oldMedia, "STATE"), false);
+  assert.equal(playback.shouldAcceptPlaybackOrder(
+    newMedia,
+    { ...newMedia, serverTime: 5_200 },
+    "STATE"
+  ), true);
+  assert.equal(playback.shouldAcceptPlaybackOrder(newMedia, newMedia, "PLAY"), false);
+  assert.equal(playback.shouldAcceptPlaybackOrder(
+    { ...newMedia, serverTime: 5_200 },
+    { ...newMedia, serverTime: 5_150 },
+    "STATE"
+  ), false);
+  assert.equal(playback.shouldAcceptPlaybackOrder(newMedia, newMedia, "PAUSE"), false);
+});
+
+test("a newer playback envelope explicitly establishes its media generation", () => {
+  const oldMedia = { mediaVersion: 4, hasFile: true, fileName: "Old movie" };
+  const overtakingPlay = { mediaVersion: 5, hasFile: true, fileName: "New movie" };
+  const clearedMedia = { mediaVersion: 6, hasFile: false, fileName: "Ignored stale name" };
+
+  const selected = playback.resolvePlaybackMediaState(oldMedia, overtakingPlay);
+  assert.equal(selected.mediaVersion, 5);
+  assert.equal(selected.hasFile, true);
+  assert.equal(selected.fileName, "New movie");
+
+  const cleared = playback.resolvePlaybackMediaState(overtakingPlay, clearedMedia);
+  assert.equal(cleared.mediaVersion, 6);
+  assert.equal(cleared.hasFile, false);
+  assert.equal(cleared.fileName, null);
+});
+
+test("reconnect playback snapshots preserve newer non-playback room state", () => {
+  const current = {
+    roomId: "ROOM",
+    roomName: "Current room",
+    hostAssigned: true,
+    isHost: false,
+    screenSharerClientId: "new-sharer",
+    screenSharerName: "New sharer",
+    guestScreenSharingAllowed: false,
+    hasFile: true,
+    fileName: "Old movie",
+    playing: false,
+    currentTime: 100,
+    serverTime: 1_000,
+    seekId: 4,
+    mediaVersion: 2,
+    playbackRevision: 8
+  };
+  const staleNonPlaybackSnapshot = {
+    ...current,
+    roomName: "Stale room name",
+    isHost: true,
+    screenSharerClientId: "old-sharer",
+    screenSharerName: "Old sharer",
+    guestScreenSharingAllowed: true,
+    fileName: "New movie",
+    playing: true,
+    currentTime: 200,
+    serverTime: 2_000,
+    seekId: 5,
+    mediaVersion: 3,
+    playbackRevision: 9
+  };
+
+  const merged = playback.mergePlaybackRoomSnapshot(current, staleNonPlaybackSnapshot);
+  assert.equal(merged.roomName, "Current room");
+  assert.equal(merged.isHost, false);
+  assert.equal(merged.screenSharerClientId, "new-sharer");
+  assert.equal(merged.screenSharerName, "New sharer");
+  assert.equal(merged.guestScreenSharingAllowed, false);
+  assert.equal(merged.fileName, "New movie");
+  assert.equal(merged.playing, true);
+  assert.equal(merged.currentTime, 200);
+  assert.equal(merged.playbackRevision, 9);
+});
+
+test("delayed reconnect snapshots cannot overwrite newer realtime events", () => {
+  const realtime = { mediaVersion: 3, playbackRevision: 51, serverTime: 2_000 };
+  const delayedSnapshot = { mediaVersion: 3, playbackRevision: 50, serverTime: 2_100 };
+  const newerSnapshot = { mediaVersion: 3, playbackRevision: 52, serverTime: 2_200 };
+
+  assert.equal(playback.shouldAcceptPlaybackOrder(realtime, delayedSnapshot, "STATE"), false);
+  assert.equal(playback.shouldAcceptPlaybackOrder(realtime, newerSnapshot, "STATE"), true);
 });
 
 test("paused-seek suppression ends at media lifecycle recovery boundaries", () => {

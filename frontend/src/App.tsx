@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
@@ -28,9 +28,21 @@ import useFullscreenState from "./party/call/useFullscreenState";
 import type { PartyTab } from "./party/types";
 import RoomKeyboardShortcuts from "./RoomKeyboardShortcuts";
 import VideoPlayer, { type VideoPlayerHandle } from "./VideoPlayer";
-import { isTimedSyncEventType, protectedAuthoritativeTime } from "./playbackSync";
+import {
+  isTimedSyncEventType,
+  mergePlaybackRoomSnapshot,
+  protectedAuthoritativeTime,
+  resolvePlaybackMediaState,
+  shouldAcceptPlaybackOrder
+} from "./playbackSync";
+import type { PlaybackOrder, PlaybackOrderEventType } from "./playbackSync";
+import {
+  calibrateServerClock,
+  shouldRefreshClockAfterForeground
+} from "./serverClock";
+import type { ServerClockEstimate } from "./serverClock";
 import { ROOM_CLIENT_ID_STORAGE_KEY, useRoomSocket } from "./useRoomSocket";
-import type { Participant, RoomState } from "./types";
+import type { Participant, RoomState, SyncEvent } from "./types";
 import "./style.css";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -66,6 +78,23 @@ function googleApisReady() {
     window.google?.accounts?.oauth2 &&
       window.gapi
   );
+}
+
+function snapshotAsSyncEvent(snapshot: RoomState): SyncEvent {
+  return {
+    type: "STATE",
+    time: snapshot.currentTime,
+    playing: snapshot.playing,
+    fileName: snapshot.fileName,
+    hasFile: snapshot.hasFile,
+    serverTime: snapshot.serverTime,
+    mediaVersion: snapshot.mediaVersion,
+    playbackRevision: snapshot.playbackRevision,
+    seekId: snapshot.seekId,
+    screenSharerClientId: snapshot.screenSharerClientId,
+    screenSharerName: snapshot.screenSharerName,
+    guestScreenSharingAllowed: snapshot.guestScreenSharingAllowed
+  };
 }
 
 function useMobileRoomLayout() {
@@ -210,6 +239,12 @@ function AuthenticatedApp({
   const [room, setRoom] =
     useState<RoomState | null>(null);
 
+  const [acceptedPlaybackEvent, setAcceptedPlaybackEvent] =
+    useState<SyncEvent | null>(null);
+
+  const [serverClockEstimate, setServerClockEstimate] =
+    useState<ServerClockEstimate | null>(null);
+
   const [toast, setToast] =
     useState("");
 
@@ -231,6 +266,13 @@ function AuthenticatedApp({
   const appShellRef = useRef<HTMLElement>(null);
   const videoPlayerRef = useRef<VideoPlayerHandle>(null);
   const lastUnreadMessageIdRef = useRef<string | null>(null);
+  const playbackOrderRef = useRef<PlaybackOrder | null>(null);
+  const realtimeEnvelopeReservationsRef = useRef(
+    new WeakMap<SyncEvent, PlaybackOrder | null>()
+  );
+  const clockRefreshSequenceRef = useRef(0);
+  const snapshotRefreshSequenceRef = useRef(0);
+  const hiddenAtRef = useRef<number | null>(null);
   const fullscreenElement = useFullscreenState();
   const mobileRoomLayout = useMobileRoomLayout();
 
@@ -245,8 +287,43 @@ function AuthenticatedApp({
 
   const googleRestoreAttemptedRef = useRef(false);
 
+  const acceptPlaybackEnvelope = useCallback((
+    source: Pick<SyncEvent, "mediaVersion" | "playbackRevision" | "serverTime">,
+    type: PlaybackOrderEventType
+  ) => {
+    const incoming: PlaybackOrder = {
+      mediaVersion: source.mediaVersion,
+      playbackRevision: source.playbackRevision,
+      serverTime: source.serverTime
+    };
+
+    if (!shouldAcceptPlaybackOrder(playbackOrderRef.current, incoming, type)) {
+      return false;
+    }
+
+    playbackOrderRef.current = incoming;
+    return true;
+  }, []);
+
+  const reserveRealtimeEvent = useCallback((event: SyncEvent) => {
+    const type: PlaybackOrderEventType | null =
+      event.type === "FILE_SELECTED" || event.type === "FILE_CLEARED"
+        ? "MEDIA"
+        : isTimedSyncEventType(event.type) ? event.type : null;
+    if (!type) return true;
+
+    const previousOrder = playbackOrderRef.current;
+    if (!acceptPlaybackEnvelope(event, type)) return false;
+    realtimeEnvelopeReservationsRef.current.set(event, previousOrder);
+    return true;
+  }, [acceptPlaybackEnvelope]);
+
   const {
     connected,
+    connectionVersion,
+    connectedRoomId,
+    connectedConnectionGeneration,
+    requestedConnectionGeneration,
     chatReady,
     lastEvent,
     sendControl,
@@ -263,8 +340,95 @@ function AuthenticatedApp({
   } = useRoomSocket(
     room?.roomId === roomId ? roomId : "",
     joinedNameTag,
-    sessionClientId
+    sessionClientId,
+    reserveRealtimeEvent
   );
+
+  const applyInitialRoomSnapshot = useCallback((snapshot: RoomState) => {
+    const event = snapshotAsSyncEvent(snapshot);
+    const previousOrder = playbackOrderRef.current;
+    const mediaGenerationChanged = previousOrder !== null &&
+      previousOrder.mediaVersion !== snapshot.mediaVersion;
+    if (!acceptPlaybackEnvelope(event, "STATE")) {
+      return false;
+    }
+
+    setRoom(snapshot);
+    setAcceptedPlaybackEvent(
+      snapshot.hasFile && previousOrder !== null && !mediaGenerationChanged
+        ? event
+        : null
+    );
+    return true;
+  }, [acceptPlaybackEnvelope]);
+
+  const applyPlaybackRoomSnapshot = useCallback((snapshot: RoomState) => {
+    const event = snapshotAsSyncEvent(snapshot);
+    const previousOrder = playbackOrderRef.current;
+    const mediaGenerationChanged = previousOrder !== null &&
+      previousOrder.mediaVersion !== snapshot.mediaVersion;
+    if (!acceptPlaybackEnvelope(event, "STATE")) {
+      return false;
+    }
+
+    setRoom((current) => current
+      ? mergePlaybackRoomSnapshot(current, snapshot)
+      : current
+    );
+    setAcceptedPlaybackEvent(
+      snapshot.hasFile && previousOrder !== null && !mediaGenerationChanged
+        ? event
+        : null
+    );
+    return true;
+  }, [acceptPlaybackEnvelope]);
+
+  const loadRoomSnapshot = useCallback(async () => {
+    if (!roomId) {
+      throw new Error("Room is not selected");
+    }
+
+    const response = await authenticatedFetch(
+      `${API_URL}/api/rooms/${roomId}?clientId=${encodeURIComponent(clientId)}`,
+      {
+        credentials: "include",
+        cache: "no-store"
+      }
+    );
+    if (!response.ok) {
+      throw new Error("Room not found");
+    }
+
+    return response.json() as Promise<RoomState>;
+  }, [authenticatedFetch, roomId, clientId]);
+
+  const refreshClockAndSnapshot = useCallback(async () => {
+    if (!roomId) return;
+
+    const clockRefreshSequence = ++clockRefreshSequenceRef.current;
+    const snapshotRefreshSequence = ++snapshotRefreshSequenceRef.current;
+    const calibration = await calibrateServerClock(loadRoomSnapshot);
+    if (!calibration) return;
+
+    if (clockRefreshSequence === clockRefreshSequenceRef.current) {
+      setServerClockEstimate(calibration.estimate);
+    }
+    if (snapshotRefreshSequence === snapshotRefreshSequenceRef.current) {
+      applyPlaybackRoomSnapshot(calibration.latestValue);
+    }
+  }, [applyPlaybackRoomSnapshot, loadRoomSnapshot, roomId]);
+
+  const refreshClock = useCallback(async () => {
+    if (!roomId) return;
+
+    const refreshSequence = ++clockRefreshSequenceRef.current;
+    const calibration = await calibrateServerClock(loadRoomSnapshot);
+    if (!calibration || refreshSequence !== clockRefreshSequenceRef.current) {
+      return;
+    }
+
+    setServerClockEstimate(calibration.estimate);
+  }, [loadRoomSnapshot, roomId]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -348,10 +512,17 @@ function AuthenticatedApp({
 
   useEffect(() => {
     lastUnreadMessageIdRef.current = null;
+    playbackOrderRef.current = null;
+    realtimeEnvelopeReservationsRef.current = new WeakMap();
+    clockRefreshSequenceRef.current += 1;
+    snapshotRefreshSequenceRef.current += 1;
+    hiddenAtRef.current = null;
     setChatUnreadCount(0);
     setPartyTab("people");
     setMobileTab("room");
     setSelfViewHidden(false);
+    setAcceptedPlaybackEvent(null);
+    setServerClockEstimate(null);
   }, [roomId]);
 
   useEffect(() => {
@@ -393,26 +564,58 @@ function AuthenticatedApp({
       return;
     }
 
-    authenticatedFetch(
-      `${API_URL}/api/rooms/${roomId}?clientId=${encodeURIComponent(
-        clientId
-      )}`,
-      { credentials: "include" }
-    )
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Room not found");
-        }
-
-        return response.json();
-      })
+    let cancelled = false;
+    loadRoomSnapshot()
       .then((data) => {
-        setRoom(data);
+        if (!cancelled) applyInitialRoomSnapshot(data);
       })
       .catch(() => {
-        setRoom(null);
+        if (!cancelled) setRoom(null);
       });
-  }, [authenticatedFetch, roomId, clientId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyInitialRoomSnapshot, loadRoomSnapshot, roomId]);
+
+  useEffect(() => {
+    if (!roomId
+        || !connected
+        || connectedRoomId !== roomId
+        || connectedConnectionGeneration !== requestedConnectionGeneration
+        || connectionVersion === 0) {
+      return;
+    }
+    void refreshClockAndSnapshot();
+  }, [
+    connected,
+    connectedConnectionGeneration,
+    connectedRoomId,
+    connectionVersion,
+    refreshClockAndSnapshot,
+    requestedConnectionGeneration,
+    roomId
+  ]);
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    const handleClockVisibility = () => {
+      const now = performance.now();
+      if (document.visibilityState !== "visible") {
+        hiddenAtRef.current = now;
+        return;
+      }
+
+      if (shouldRefreshClockAfterForeground(hiddenAtRef.current, now)) {
+        void refreshClock();
+      }
+      hiddenAtRef.current = null;
+    };
+
+    document.addEventListener("visibilitychange", handleClockVisibility);
+    return () => document.removeEventListener("visibilitychange", handleClockVisibility);
+  }, [refreshClock, roomId]);
 
   useEffect(() => {
     const joinedRoom = participants.some((participant) => participant.clientId === clientId);
@@ -491,6 +694,39 @@ function AuthenticatedApp({
       return;
     }
 
+    const playbackOrderType: PlaybackOrderEventType | null =
+      lastEvent.type === "FILE_SELECTED" || lastEvent.type === "FILE_CLEARED"
+        ? "MEDIA"
+        : isTimedSyncEventType(lastEvent.type) ? lastEvent.type : null;
+    const wasReserved = realtimeEnvelopeReservationsRef.current.has(lastEvent);
+    const reservedPreviousOrder = realtimeEnvelopeReservationsRef.current.get(lastEvent) ?? null;
+    if (wasReserved) realtimeEnvelopeReservationsRef.current.delete(lastEvent);
+    const previousPlaybackOrder = wasReserved
+      ? reservedPreviousOrder
+      : playbackOrderRef.current;
+    const mediaGenerationChanged = previousPlaybackOrder !== null &&
+      previousPlaybackOrder.mediaVersion !== lastEvent.mediaVersion;
+    if (playbackOrderType) {
+      if (wasReserved) {
+        const currentOrder = playbackOrderRef.current;
+        if (!currentOrder
+            || currentOrder.mediaVersion !== lastEvent.mediaVersion
+            || currentOrder.playbackRevision !== lastEvent.playbackRevision
+            || currentOrder.serverTime !== lastEvent.serverTime) {
+          return;
+        }
+      } else if (!acceptPlaybackEnvelope(lastEvent, playbackOrderType)) {
+        return;
+      }
+    }
+
+    if (lastEvent.type === "FILE_SELECTED" || lastEvent.type === "FILE_CLEARED"
+        || mediaGenerationChanged) {
+      setAcceptedPlaybackEvent(null);
+    } else if (isTimedSyncEventType(lastEvent.type)) {
+      setAcceptedPlaybackEvent(lastEvent);
+    }
+
     setRoom((previous) => {
       if (!previous) {
         return previous;
@@ -509,6 +745,7 @@ function AuthenticatedApp({
           serverTime: lastEvent.serverTime,
           seekId: lastEvent.seekId ?? previous.seekId,
           mediaVersion: lastEvent.mediaVersion,
+          playbackRevision: lastEvent.playbackRevision,
           hostAssigned: true,
           isHost,
           screenSharerClientId: lastEvent.screenSharerClientId ?? null,
@@ -530,6 +767,7 @@ function AuthenticatedApp({
           serverTime: lastEvent.serverTime,
           seekId: lastEvent.seekId ?? previous.seekId,
           mediaVersion: lastEvent.mediaVersion,
+          playbackRevision: lastEvent.playbackRevision,
           hostAssigned: Boolean(eventHost) || previous.hostAssigned,
           isHost: eventHost ? isHost : previous.isHost,
           screenSharerClientId: lastEvent.screenSharerClientId ?? null,
@@ -545,9 +783,16 @@ function AuthenticatedApp({
 
       const eventSeekId = lastEvent.seekId ?? previous.seekId;
       const authoritativeSeekAdvanced = eventSeekId > previous.seekId;
+      const playbackMediaState = resolvePlaybackMediaState(previous, {
+        mediaVersion: lastEvent.mediaVersion,
+        hasFile: lastEvent.hasFile,
+        fileName: lastEvent.fileName ?? null
+      });
 
       return {
         ...previous,
+        hasFile: playbackMediaState.hasFile,
+        fileName: playbackMediaState.fileName,
         playing: lastEvent.playing,
         currentTime: protectedAuthoritativeTime(
           lastEvent.type,
@@ -559,6 +804,7 @@ function AuthenticatedApp({
         serverTime: lastEvent.serverTime,
         seekId: Math.max(previous.seekId, eventSeekId),
         mediaVersion: lastEvent.mediaVersion,
+        playbackRevision: lastEvent.playbackRevision,
         hostAssigned: Boolean(eventHost) || previous.hostAssigned,
         isHost: eventHost ? isHost : previous.isHost,
         screenSharerClientId: lastEvent.screenSharerClientId ?? null,
@@ -567,7 +813,7 @@ function AuthenticatedApp({
           lastEvent.guestScreenSharingAllowed ?? previous.guestScreenSharingAllowed
       };
     });
-  }, [lastEvent, clientId]);
+  }, [acceptPlaybackEnvelope, lastEvent, clientId]);
 
   useEffect(() => {
     if (room?.roomId !== roomId || !joinedNameTag) {
@@ -906,7 +1152,7 @@ function AuthenticatedApp({
       return;
     }
 
-    setRoom(await response.json());
+    applyPlaybackRoomSnapshot(await response.json() as RoomState);
   }
 
   async function closeVideo() {
@@ -923,7 +1169,7 @@ function AuthenticatedApp({
         if (response.status !== 401) showToast("Could not close the video");
         return;
       }
-      setRoom(await response.json());
+      applyPlaybackRoomSnapshot(await response.json() as RoomState);
       showToast("Video closed");
     } catch {
       showToast("Could not close the video");
@@ -954,7 +1200,7 @@ function AuthenticatedApp({
         return;
       }
 
-      setRoom(await response.json());
+      applyPlaybackRoomSnapshot(await response.json() as RoomState);
       setTheaterMode(false);
     }
 
@@ -1402,8 +1648,8 @@ function AuthenticatedApp({
                     mediaVersion={room.mediaVersion}
                     initialTime={room.currentTime}
                     initialPlaying={room.playing}
-                    syncEvent={lastEvent?.type === "PARTICIPANTS"
-                      || lastEvent?.type === "SCREEN_SHARE" ? null : lastEvent}
+                    syncEvent={acceptedPlaybackEvent}
+                    serverClockEstimate={serverClockEstimate}
                     onControl={sendControl}
                     clientId={clientId}
                     isHost={room.isHost}

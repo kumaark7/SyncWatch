@@ -30,6 +30,7 @@ public class Room {
     private volatile long updatedAt;
     private volatile long seekVersion;
     private volatile long mediaVersion;
+    private volatile long playbackRevision;
     private final Map<String, String> participantNames = new LinkedHashMap<>();
     private final Map<String, String> participantUserIds = new LinkedHashMap<>();
     private final Map<String, Set<String>> sessionsByClientId = new LinkedHashMap<>();
@@ -59,6 +60,7 @@ public class Room {
     public boolean isPlaying() { return playing; }
     public long getSeekVersion() { return seekVersion; }
     public long getMediaVersion() { return mediaVersion; }
+    public long getPlaybackRevision() { return playbackRevision; }
     public boolean hasFile() { return fileId != null && !fileId.isBlank(); }
     public boolean hasHost() { return hostClientId != null && !hostClientId.isBlank(); }
     public boolean isHost(String clientId) {
@@ -154,8 +156,13 @@ public class Room {
     }
 
     public synchronized void resetPlayback() {
-        playing = false;
-        currentTime = 0;
+        playbackRevision++;
+        setPlaybackState(0, false);
+    }
+
+    private void setPlaybackState(double time, boolean playing) {
+        currentTime = Math.max(0, time);
+        this.playing = playing;
         updatedAt = System.currentTimeMillis();
     }
 
@@ -181,14 +188,14 @@ public class Room {
     }
 
     public synchronized void updatePlayback(double time, boolean playing) {
-        currentTime = Math.max(0, time);
-        this.playing = playing;
-        updatedAt = System.currentTimeMillis();
+        playbackRevision++;
+        setPlaybackState(time, playing);
     }
 
     public synchronized void updateSeek(double time, boolean playing) {
         seekVersion++;
-        updatePlayback(time, playing);
+        playbackRevision++;
+        setPlaybackState(time, playing);
     }
 
     public synchronized double getCurrentTime() {
