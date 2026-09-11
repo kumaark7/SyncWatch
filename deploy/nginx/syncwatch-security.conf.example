@@ -1,11 +1,25 @@
+# Reference fragments for the existing SyncWatch Nginx configuration.
+# Review paths/certificates against the host; do not paste over unrelated vhosts.
+
 # Define this once in the Nginx http context, outside all server blocks.
 log_format syncwatch_safe '$remote_addr - $remote_user [$time_local] '
                           '"$request_method $uri $server_protocol" '
                           '$status $body_bytes_sent '
                           '"$http_user_agent"';
 
-# Add these directives to the SyncWatch HTTPS server block only.
+# HTTP-to-HTTPS redirect vhost.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name play.projectdarkhope.xyz;
+    return 301 https://$host$request_uri;
+}
+
+# Add the remaining directives to the existing SyncWatch HTTPS server block.
+# Keep the host's current listen 443 ssl and certificate directives.
 server_tokens off;
+root /var/www/syncwatch;
+index index.html;
 access_log /var/log/nginx/syncwatch-access.log syncwatch_safe;
 
 add_header Strict-Transport-Security "max-age=31536000" always;
@@ -14,6 +28,14 @@ add_header X-Frame-Options "DENY" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
+# Ensure the PWA manifest has the correct MIME type even if the host mime.types
+# file does not define the webmanifest extension.
+location = /manifest.webmanifest {
+    try_files $uri =404;
+    default_type application/manifest+json;
+}
+
+# Keep this more-specific stream location before the generic API proxy.
 location ^~ /api/stream/ {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
@@ -50,4 +72,10 @@ location /ws {
     proxy_cache_bypass $http_upgrade;
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
+}
+
+# SPA fallback and static PWA files. API/WebSocket locations above remain
+# separate and are never routed through index.html.
+location / {
+    try_files $uri $uri/ /index.html;
 }

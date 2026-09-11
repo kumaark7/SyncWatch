@@ -1,131 +1,157 @@
 # SyncWatch Project Context
 
-Current architecture for v1.0.0 release preparation. Maven, npm, and the health endpoint report 1.0.0; Maven packaging produces syncwatch-1.0.0.jar. This document does not pin a development branch or claim a release is deployed. Read AGENTS.md before changes; the UI standard lives at root UI_UX_STANDARD.md.
+This is the current architecture context for SyncWatch v1.0.0. Maven, npm, the health endpoint, the PWA cache namespace, and the packaged JAR use version 1.0.0. Historical v0.3/v0.9 documents are records, not current architecture contracts.
 
-## Structure
+Read `AGENTS.md` before changes. UI work must also follow the root `UI_UX_STANDARD.md`.
 
-- frontend/: React + TypeScript + Vite, native HTML video, STOMP.js.
-- frontend/src/App.tsx: auth/Home/Room coordination, Drive selection and room events.
-- frontend/src/VideoPlayer.tsx: synchronized movie controls and media handling.
-- frontend/src/party/: People, chat, and LiveKit UI.
-- frontend/src/gesture/: optional local MediaPipe gesture recognition.
-- backend/: Java 21, Spring Boot 4.1.0, Maven, Spring JDBC, REST and WebSocket/STOMP.
-- backend/src/main/resources/schema.sql: persistent account, Drive, and Remember Me tables.
+## Repository Structure
 
-Root package scripts target backend/ and frontend/. There is no Node server/client backend pair.
+- `frontend/`: React 19, TypeScript, Vite 7, STOMP.js, native HTML5 video, and LiveKit UI.
+- `frontend/src/App.tsx`: authenticated/Home/Room orchestration, room snapshot handling, Drive selection, and shared room UI state.
+- `frontend/src/VideoPlayer.tsx`: synchronized media application, local controls, buffering, autoplay recovery, and media lifecycle.
+- `frontend/src/playbackSync.ts`: playback ordering, media-generation merging, zero-time guards, and play-rejection state transitions.
+- `frontend/src/serverClock.ts`: bounded server-clock calibration using `performance.now()`.
+- `frontend/src/useRoomSocket.ts`: one room STOMP lifecycle, subscriptions, stable client identity, reconnect diagnostics, and chat state.
+- `frontend/src/party/`: People, chat, LiveKit call controls, and screen-share presentation.
+- `frontend/public/`: branding, PWA manifest/icons, and service worker.
+- `backend/`: Java 21, Spring Boot 4.1, Maven, REST, WebSocket/STOMP, and Spring JDBC.
+- `backend/src/main/resources/schema.sql`: persistent account, Drive connection, and Remember Me tables.
+- `deploy/`: publishable production runbooks and an Nginx reference fragment; live VPS configuration remains operator-managed.
 
-## Persistent and Temporary State
+Root npm scripts target `backend/` and `frontend/`. There is no legacy Node `server/`/`client/` application pair.
 
-File-backed H2 stores unique username/email accounts, stable user IDs, BCrypt password hashes (cost 12), encrypted registered-user Drive refresh tokens, and SHA-256 Remember Me token hashes. The default JDBC path ./syncwatch-users is relative to Java's working directory. Production should use an explicit stable path.
+## Production Topology
 
-RoomStore, Room playback state, presence, and ChatService history are in memory. Spring restart loses rooms/chat and ordinary servlet sessions. Persistent login can restore an account session but cannot restore a lost room.
+```text
+Browser / installed PWA
+        |
+        v
+Nginx: HTTPS, frontend static files, /api and /ws
+        |
+        v
+Spring Boot: 127.0.0.1:8080
+        |
+        +-- file-backed H2
+        +-- in-memory room services
 
-## Authentication and Participant Identity
+Browser ---------------- WebRTC ----------------> LiveKit
+Spring -------------- LiveKit server API -------> LiveKit
+```
 
-AuthController supports public Sign Up and Sign In by username/email plus password, establishing HttpSession with stable userId. AuthSessionResponse returns safe identity fields.
+Nginx is the intended public HTTP entry point. It serves the Vite build, provides SPA fallback, proxies same-origin API/WebSocket traffic, forwards trusted single-proxy client-address metadata, and preserves Range headers for `/api/stream/`.
 
-Servlet inactivity timeout remains 30 minutes. App revalidates approximately every five minutes and on focus/visibility restoration, plus before Picker/file operations. AuthProvider handles protected fetch 401s without replaying mutations.
+## State Ownership and Persistence
 
-RememberMeService issues 32-byte random tokens, hashes them for H2 storage, expires them after 30 days, and rotates them on successful restoration. Cookies use HttpOnly, SameSite=Lax, and Secure when SYNCWATCH_COOKIE_SECURE=true. Local HTTP defaults to false. Logout invalidates the session and revokes the current remembered token.
+Persistent H2 state:
 
-Invite links use /?room=ROOM_ID. GuestAuthController establishes a room-scoped session with server-generated guest ID and client ID after name entry. Anonymous guests have no account or persistent Remember Me token.
+- `syncwatch_users`: registered account identity and BCrypt password hashes.
+- `google_drive_connections`: registered-user refresh credentials encrypted with AES-GCM and keyed by user ID.
+- `remember_me_tokens`: SHA-256 token hashes, user ownership, and expiry.
 
-Stable browser client identity and room name tags use sessionStorage to support refresh. They are not authorization proofs. Participant ownership is bound to a server-session user/guest ID, and incoming actions are checked against it.
+In-memory backend state:
 
-AuthFilter protects API/WebSocket access with public auth routes and a narrow guest allowlist. WebSocketAuthInterceptor checks handshake identity and restricts guest destinations to the invited room. HTTP/STOMP origins are explicitly configured.
+- active rooms and participants
+- authoritative playback state
+- selected media and active access-token cache
+- room chat history
+- guest temporary Drive credentials
+- reconnect/presence timers
 
-Room actions verify participant/Host ownership; CallController issues LiveKit tokens only for the caller's own participant. Request client IDs, names, and URL shape cannot establish Host rights.
+Browser state includes the ordinary session cookie, Remember Me cookie, room name/client identity in `sessionStorage`, local call/device preferences, current UI state, and PWA caches. Browser identifiers support continuity but do not establish authorization.
 
-Current limitation: anonymous guest sessions cannot access the manual Host-transfer or Close Room endpoints through AuthFilter, even after promotion. Do not claim universal availability of those actions to guest Hosts without a separate implementation change.
+Backend restart preserves registered accounts, password hashes, registered-user Drive connections, and Remember Me records. It does not preserve active rooms, participants, room chat, selected-room state, playback, guest Drive credentials, or ordinary servlet sessions. A remembered account can obtain a new HTTP session after restart, but a lost in-memory room cannot be restored.
 
-## Room Lifecycle
+## Authentication and Authorization
 
-Registered Sign In/Sign Up leads to Home, then Create/Join. Creation establishes Host; selecting a Drive file does not assign Host.
+`AuthController` provides public Sign Up and Sign In by username/email and password. Successful authentication establishes `HttpSession` identity using a stable server-generated user ID. Passwords are BCrypt hashes and safe session responses never expose them.
 
-Manual Make Host changes authoritative ownership and broadcasts participant/Host state with a chat notice. On deliberate Host departure, the oldest remaining participant is promoted deterministically. A returning former Host does not automatically regain the role.
+Servlet inactivity timeout is 30 minutes. The authenticated UI revalidates `/api/auth/session` approximately every five minutes, on focus/visibility restoration, and before Picker/file operations. A protected fetch returning 401 invalidates frontend auth state; state-changing requests are not automatically retried.
 
-RoomPresenceService applies a five-second reconnect grace. Replacement STOMP sessions using the same stable identity cancel pending departure, avoiding false leave/join and premature promotion. Real disconnect completes after grace. Explicit Leave acts immediately. Empty rooms are removed.
+Remember Me uses a separate 32-byte random token with a 30-day lifetime. H2 stores its SHA-256 hash, successful restoration atomically consumes and rotates it, and logout revokes it. Cookies are HttpOnly, SameSite=Lax, Path `/`, and Secure when `SYNCWATCH_COOKIE_SECURE=true`.
 
-Close Room explicitly terminates and broadcasts closure without Host transfer. Frontend cleanup clears room-specific identity/state and returns participants to Home. Leave also returns Home; registered auth and persistent Drive authorization are retained. Logout is on Home.
+Invite-link guests receive a room-scoped backend session, server-generated guest ID, and authorized client identity after entering a name. They do not receive a registered account or persistent Remember Me token. Guest HTTP and STOMP access is constrained to the invited room.
 
-## Playback
+Participant ownership is bound to the authenticated user/guest ID. Room controls, Host transfer, media selection, call tokens, and screen-share actions verify that ownership against server room state. Browser-provided room IDs, names, and client IDs are request data, not authorization proofs. A promoted guest Host can transfer Host and manage media within the guest allowlist; Close Room currently requires a registered user session as well as authoritative Host ownership.
 
-Media: Google Drive original bytes -> StreamController HTTP Range proxy -> native browser video.
+## Room Lifecycle and Presence
 
-Control: player/shortcut/gesture -> existing STOMP action -> SyncController authoritative Room -> broadcast -> clients.
+Registered users create rooms from Home; registered users or invited guests join with a room name tag. The creator initially claims Host ownership. Manual Make Host is server-authoritative. When the current Host genuinely leaves, the oldest remaining participant is promoted deterministically; a previous Host does not regain the role merely by rejoining.
 
-Keep seek ordering, remote-event suppression, server-time compensation, play/pause preservation on seek, drift/rate correction, buffering, and autoplay handling intact. SyncScheduler sends state every five seconds for playing rooms with a file. Join/subscription restores room state.
+Unexpected STOMP disconnects use `syncwatch.websocket.presence-grace`, defaulting to 30 seconds. During grace, the participant remains logically present: there is no Host transfer, SYSTEM_LEAVE, temporary Drive cleanup, LiveKit removal, or empty-room deletion. Reconnection with the same stable client identity replaces the old STOMP session association and cancels pending departure without duplicate presence messages.
 
-WebSocketConfig provides a scheduler and 10-second broker heartbeats. STOMP.js uses 10-second heartbeats and reconnectDelay 2000. WebSocket traffic is separate from HTTP auth keepalive.
+Grace expiry performs normal departure, LiveKit cleanup, guest temporary Drive cleanup, Host transfer when needed, and empty-room cleanup. Explicit Leave Room and Host Close Room are immediate. Close Room terminates the room without Host transfer; Leave Room preserves registered authentication and persistent Drive authorization.
 
-## Drive Ownership and Streaming
+## Playback Synchronization
 
-GoogleDriveOAuthService uses popup authorization-code exchange with drive.file scope. Short-lived Picker tokens stay in browser memory; refresh tokens remain backend-only.
+Playback has a control plane and a byte plane. Movie bytes never travel over STOMP.
 
-Registered refresh tokens are AES-GCM encrypted in H2 by userId. The key derives from GOOGLE_CLIENT_SECRET; rotating that secret affects stored-token decryption. Connections survive logout/login and role changes without cross-user inheritance.
+Control flow:
 
-Promoted guest Hosts can authorize their own Drive using an encrypted backend memory map keyed by guest ID. Departure/room cleanup or explicit Disconnect removes temporary credentials. They never enter the persistent account connection table.
+```text
+local control -> /app/room/{roomId}/control -> SyncController
+              -> synchronized Room mutation -> /topic/room/{roomId}
+              -> client ordering/recovery -> video element
+```
 
-GoogleDriveOAuthController resolves the current registered user, or verifies that a guest owns the current Host participant. Code exchange validates X-Requested-With and OAuth redirect origin. Disconnect affects only the caller's authorization.
+`Room` is authoritative. Every accepted PLAY, PAUSE, and SEEK advances `playbackRevision`; SEEK also advances `seekId`. Selecting or clearing media resets playback and advances the playback revision. `mediaVersion` changes only when media identity changes, keeping ordinary room events from remounting/reloading the video.
 
-Room caches the selected file's credential owner, access token, and expiresAt. Host transfer does not transfer authorization or rewrite the file owner. A new Host may connect their own Drive while the selected movie continues with its original owner's credentials.
+Clients reject lower playback revisions across PLAY/PAUSE/SEEK/STATE. Within one revision, a newer STATE snapshot may refine the same state without undoing a newer realtime event. `seekId` separately rejects stale explicit seeks. A new media generation establishes its own ordering context.
 
-accessTokenFor(room) checks expiry for each stream request and refreshes through the credential owner when needed; refresh work is synchronized. StreamController preserves Range, successful upstream status, Content-Range and other content headers. No transcoding, FFmpeg, HLS/DASH conversion, or movie-quality adjustment is present.
+Explicit SEEK to zero is authoritative. PLAY, PAUSE, buffering, reconnect, participant updates, Host transfer, screen sharing, and state refresh cannot replace an established nonzero position with an accidental zero. Remote application is suppressed so native media events do not echo duplicate controls.
 
-Known boundary: upstream non-2xx responses are propagated. Forced refresh and retry of the same Range request after upstream 401 is not implemented.
+`serverClock.ts` samples `GET /api/rooms/{roomId}` three times and selects the lowest valid RTT sample. After calibration, estimated server time advances from `performance.now()`, avoiding device wall-clock skew. Calibration occurs on initial connection, STOMP reconnect, and after a meaningful foreground return; foreground refresh updates the clock without reconnecting STOMP or applying an unnecessary playback snapshot. Failure uses a bounded no-transport-age fallback rather than an unbounded wall-clock delta.
 
-## Chat and Calls
+Modern clients subscribe, JOIN with `clientSnapshotSupported=true`, and retrieve their own authoritative REST snapshot. The same playback-order guard arbitrates REST and realtime data, so a delayed snapshot cannot overwrite a newer event. The backend retains a temporary legacy JOIN STATE broadcast only for clients that do not advertise snapshot support. PARTICIPANTS remains room-wide, and stable reconnects do not create duplicate SYSTEM_JOIN messages.
 
-ChatService stores room history in memory and broadcasts participant/call/Host-change notices. Party UI contains People, Chat, and Call.
+`SyncScheduler` sends room STATE every five seconds for rooms that are playing and have a file. Drift correction, hard-seek thresholds, soft rate correction, buffering/seeking recovery, and bounded autoplay recovery remain frontend responsibilities. Genuine `NotAllowedError` displays the user playback-start action; transient `AbortError` retains authoritative play intent and retries only at media recovery boundaries.
 
-CallProvider creates one LiveKit Room with adaptiveStream:true and dynacast:true. LiveKit carries WebRTC media independently of movie streaming. Controls include devices, mic/camera, speaker mute, connection indicators, floating/minimized layout, audio processing, and requested camera quality.
+## Google Drive Playback
 
-Adaptive Stream controls received call quality. Manual camera presets request local capture quality. Neither changes Drive movie bytes. PushToTalkProvider uses hold T, ignores typing, and respects manual OFF. Optional gesture recognition reuses the local camera and runs locally.
+Google Identity Services performs popup authorization-code exchange, and Google Picker selects a file under the `drive.file` scope. The browser uses a short-lived access token for Picker; persistent refresh credentials never need to be returned to frontend JavaScript.
 
-## Screen Sharing
+Registered-user refresh credentials are AES-GCM encrypted in H2 by user ID. The encryption key derives from `GOOGLE_CLIENT_SECRET`, so changing that secret prevents existing connection records from being decrypted. Promoted guest Hosts may connect their own Drive, but those credentials stay in an encrypted in-memory map keyed by guest identity and are removed on guest departure/room cleanup or explicit disconnect. Host transfer never transfers Drive ownership.
 
-ScreenShareController reserves one participant per application room with ownership checks. The Host can block anonymous guest shares; registered users and the Host remain eligible. RoomResponse/SyncEvent include sharer identity and guest-permission state.
+Movie flow:
 
-CallProvider uses the existing LiveKit participant's setScreenShareEnabled with browser-supported audio. After capture starts, VideoPlayer.pausePlayback sends the existing synchronized PAUSE action. ScreenShareStage overlays the exact main-player area and labels the sharer. Stop restores the movie without sending PLAY.
+```text
+video Range request -> /api/stream/{roomId} -> StreamController
+                    -> Google Drive alt=media with Range/If-Range
+                    -> original 200/206 response -> browser
+```
 
-Local track termination, call leave/disconnect, provider cleanup, and room departure release sharing state. The native browser picker determines tab/window/screen selection. System audio and capture support vary by browser/platform.
+`StreamController` incrementally copies the upstream body and preserves status plus `Content-Range`, `Content-Length`, `Content-Type`, `Accept-Ranges`, `ETag`, and `Last-Modified`. Long offsets support multi-gigabyte files. On the first upstream 401 while opening a request, the initial body is closed, authorization refresh occurs once, and the exact Range/If-Range is retried once. A second 401 is returned without another retry. Expected browser-aborted responses stop copying and close Drive resources; genuine upstream failures remain errors. There is no transcoding, HLS/DASH conversion, whole-file JVM buffering, or VPS media storage.
 
-Security boundary: LiveKit join tokens permit camera and microphone but not screen sources. After an authenticated participant claims the one active share, the backend uses LiveKit `UpdateParticipant` to temporarily add `SCREEN_SHARE` and `SCREEN_SHARE_AUDIO`; stop, Host blocking, incompatible Host transfer, and departure revoke them while preserving camera/mic/data. Signed `participant_joined` and `track_published` webhooks reconcile self-hosted reconnects and modified clients. Production LiveKit must send webhooks to `/api/livekit/webhook` using the configured API key.
+## Chat, Calls, and Screen Sharing
 
-## Keyboard Shortcuts
+`ChatService` stores bounded room history in memory and broadcasts user messages plus presence, call, and Host-change system messages. Chat uses the existing room STOMP connection and subscription.
 
-RoomKeyboardShortcuts and PushToTalkProvider are the source of truth. Ignore editable targets and Ctrl/Alt/Meta modifiers; reuse existing actions.
+`CallController` issues a short-lived LiveKit token only for the authenticated participant in the requested SyncWatch room. The token derives the LiveKit room/identity server-side and grants room join, camera, microphone, data publishing, and subscription without room-admin privileges. The browser then connects directly to LiveKit over WebRTC; call media never flows through Spring.
 
-| Key | Action |
-| --- | --- |
-| Space / P | synchronized Play/Pause |
-| Left / Right | synchronized seek -10/+10 seconds |
-| Up / Down | local volume +5%/-5% |
-| M / V | microphone / camera |
-| C | Chat |
-| Hold T | Push-to-Talk when enabled |
-| F | fullscreen |
-| ? | help |
+Only one participant can hold the SyncWatch screen-share lease. Authorized sharing temporarily adds LiveKit `SCREEN_SHARE` and `SCREEN_SHARE_AUDIO` sources through `UpdateParticipant`; revocation removes an active track and prevents immediate republishing. Signed LiveKit webhooks reconcile reconnects and modified clients. Screen sharing pauses synchronized movie playback, replaces the main player presentation, and never auto-resumes the movie when sharing stops.
 
-## Validation
+## PWA and Frontend Networking
 
-From repository root:
+Production `api.ts` uses same-origin requests. Development may use `VITE_API_URL`, defaulting to `http://localhost:8080` only when `import.meta.env.DEV` is true. Production `.env.production` provides public Google build-time values and must remain ignored.
+
+The PWA service worker uses cache namespace `v1.0.0`. Navigation is network-first with cached shell fallback. Same-origin Vite content-hashed assets are cache-first. `/api`, `/api/stream`, `/ws`, cross-origin, and non-GET requests bypass the worker. `skipWaiting` and `clients.claim` update worker control without forcing an active room to reload.
+
+## Configuration
+
+Shared defaults are in `backend/src/main/resources/application.properties`. Production settings and secrets belong in `/etc/syncwatch.env`; frontend build-time values belong in ignored `frontend/.env.production`. Exact names, safe placeholders, systemd, Nginx, H2 permissions, backup, rollback, and health checks are documented in `deploy/PRODUCTION_DEPLOYMENT.md` and `deploy/PRODUCTION_SECURITY.md`.
+
+## Validation and Release Status
 
 ```sh
-mvn -f backend/pom.xml test
+corepack npm --prefix frontend test
+corepack npm --prefix frontend audit
 corepack npm --prefix frontend run build
+mvn -f backend/pom.xml test
+mvn -f backend/pom.xml package
 git diff --check
 ```
 
-Build runs TypeScript and Vite. No separate frontend lint/test script exists. Backend tests cover authentication, Remember Me, guest isolation, ownership, lifecycle, reconnect presence, Drive ownership, and screen-share control.
+The v1.0.0 release-preparation baseline records 58 passing frontend tests and 125 passing backend tests under Java 21. Browser OAuth, two-person synchronized playback, native capture, and production proxy behavior still require runtime checks in addition to automated tests.
 
-Manual verification should cover account switching, guest invites, refresh, Host transfer, Leave/Close, late joining, long-session seeking, reconnect grace, two-person calls, screen sharing/audio, browser Stop sharing, and mobile/fullscreen. Passing unit tests does not establish successful browser OAuth or native media capture.
+Completed release evidence includes v0.9.7 synchronization hardening, functional production checks, large seeks, reconnect recovery, Host transfer, Drive Range behavior, and v1.0.0 metadata conversion. Full 2+ hour endurance/performance QA is deferred until after v1.0.0 and must not be described as passed.
 
-## Remaining Release Housekeeping
-
-- The private root tooling package retains its existing name, watch-party-mvp; its version is 1.0.0.
-- ISSUES_FACED_AND_FIXES.txt is historical troubleshooting, not the current architecture contract.
-- Production security deployment guidance and an Nginx reference snippet are tracked under `deploy/`; live Nginx, systemd, environment, and secret files remain operator-managed.
-- Bundle-size warnings and browser runtime verification remain separate work. No optimization or behavior change is implied here.
-
-See README.md for current setup, environment variables, and production cookie/database requirements.
+Historical scope is intentionally preserved in `SECURITY_REVIEW.md` (v0.9) and `ISSUES_FACED_AND_FIXES.txt` (v0.3). `WEBSOCKET_ENDURANCE_TEST.md` is the current reconnect/endurance checklist.

@@ -1,85 +1,56 @@
 # WebSocket Endurance Test
 
-Use two browsers/participants on the same build. Record the commit/build, browser
-versions, operating systems, test start/end UTC, and scenario locally. Keep machines
-awake. Do not change server/proxy timeouts or the five-second presence grace.
+This is the current v1.0.0 manual reliability checklist. Use two browsers/participants on the same build. Record the commit/build, browser versions, operating systems, start/end UTC, and scenario locally. Keep test devices awake. Do not change heartbeat, reconnect, presence-grace, or proxy timeout settings during a baseline run.
+
+## Current Baseline
+
+- STOMP reconnect delay: 2,000 ms.
+- Client incoming heartbeat: 10,000 ms.
+- Client outgoing heartbeat: 10,000 ms.
+- Spring simple-broker heartbeat: 10,000 ms in each direction.
+- Unexpected-disconnect presence grace: 30 seconds by default.
+- Authoritative room STATE: every five seconds while playing with a selected file.
 
 ## Capture
 
-- Enable Console Preserve log and filter on "[SyncWatch STOMP]" on each browser.
-  Use separate local labels A/B; connection numbers are browser-local, not shared IDs.
-- Each event has UTC timestamp, connection number, attempt, establishedAt,
-  monotonic uptimeMs, visibility, online hint, reconnectDelayMs, and the server's
-  negotiated STOMP heartbeat values. Connecting resets establishedAt to null.
-- transport-closed records code, clean, and nextAttempt when the client is active.
-  Delay is the configured 2000 ms, not a guarantee: suspension/network/handshake
-  time can delay the next connecting event.
-- Close reason is an exact generic allowlist match, "not-provided", or "redacted".
-  No raw server reason, STOMP error body, credentials, room IDs, or names are captured
-  by these browser diagnostics. A 1006 close commonly supplies no reason.
-- visibility-changed is event-driven. There is no diagnostic polling or per-heartbeat
-  console spam. heartbeat-lost means the client detected missing server traffic;
-  it does not prove which network/proxy/browser component caused it.
+- Enable Console Preserve log and filter on `[SyncWatch STOMP]` in each browser.
+- Use local labels A/B. Connection numbers are browser-local diagnostics, not participant IDs.
+- Events include UTC timestamp, connection number, attempt, established time, monotonic uptime, visibility, online hint, reconnect delay, and negotiated heartbeat values.
+- `transport-closed` records the close code, clean flag, and next attempt when active. The 2,000 ms delay does not include browser suspension, network recovery, or handshake time.
+- Close reasons are allowlisted/redacted. Diagnostics do not record raw STOMP bodies, room IDs, names, cookies, tokens, or credentials.
+- `heartbeat-lost` means the client detected missing server traffic; it does not by itself identify Nginx, Spring, browser throttling, or the network as the cause.
 
 ## Scenarios
 
-1. **Foreground, 45-60 minutes:** keep the room visible and movie playing.
-   Record any unsolicited reconnect and its timestamp. Expect no cleanup/recreation
-   solely because of session revalidation. Send occasional chat messages and seek
-   at recorded times; verify both clients converge without duplicate participants.
-2. **Background tab, 10-15 minutes:** move A to a background tab while B observes.
-   Return A to the foreground. Record visibility events, heartbeat-loss/close events,
-   participant count and restored playback. Workers reduce timer throttling but
-   do not prevent browser freezing, discarded tabs, device sleep, or network loss.
-3. **Network interruption, 2-3 seconds:** interrupt A's real network, then restore.
-   Browser DevTools Offline may not interrupt an existing WebSocket; verify the
-   transport actually closes, or record "no transport close". If reconnection
-   reaches Spring within grace, expect the same participant/Host and no leave/join.
-4. **Network interruption, 7-10 seconds:** repeat with B remaining connected.
-   Record when Spring detects disconnect, when grace expires, and when A reconnects.
-   Grace starts at server disconnect detection, not when the network is disabled.
-   This outage may not trigger a close before restoration. If grace does expire,
-   one departure and subsequent join/Host transfer are current expected behavior;
-   repeated notices or duplicate simultaneous participants are failures.
-5. **Playback + chat active:** include several minutes of ordinary playback and
-   chat in each applicable scenario. Confirm reconnect restores authoritative
-   room state rather than publishing a zero-time playback reset.
-6. **Screen sharing:** share during part of the foreground/background test.
-   Verify the movie pauses for everyone, sharing occupies the player, and stopping
-   leaves the movie paused. Record whether a STOMP drop also affected sharing/call
-   media; do not assume the two separate transports failed together.
-7. **Correlate logs:** compare browser UTC timestamp/establishedAt with Spring's
-   STOMP timestamp and the same interval in existing Nginx logs. Check system clocks
-   and Nginx timezone offsets first. Record the first error preceding each close.
+1. **Foreground, 45-60 minutes:** keep the room visible and the movie playing. Send occasional chat messages and recorded seeks. Existing participants should not duplicate, leave/join, or change Host because of session revalidation.
+2. **Background tab, 10-15 minutes:** background A while B observes, then return A to the foreground. Record visibility, clock recalibration, heartbeat, and close events. Returning should not reload media, reconnect STOMP solely for clock calibration, or emit playback controls.
+3. **Short interruption, 2-3 seconds:** interrupt A's real network, then restore it. DevTools Offline may not close an established socket, so confirm whether transport closure actually occurred. Reconnection within grace should preserve participant identity, Host, LiveKit call, guest Drive state, and chat presence without SYSTEM_LEAVE/SYSTEM_JOIN.
+4. **Medium interruption, 7-10 seconds:** repeat while B remains connected. This remains inside the 30-second grace once Spring detects disconnect; expect the same logical participant and no Host transfer or LiveKit removal.
+5. **Grace-expiry interruption, more than 30 seconds after server detection:** keep A disconnected long enough for Spring's grace timer to expire. Expect exactly one departure. If A was Host, expect deterministic Host transfer; if the room becomes empty, expect room cleanup. A later connection is a genuine join.
+6. **Playback and chat active:** include ordinary playback, explicit seeks including zero, and chat. Recovery must use authoritative revision ordering and must not publish a zero-time reset or duplicate PLAY/PAUSE/SEEK.
+7. **Screen sharing and call:** share during part of the run. Verify sharing pauses the movie, occupies the player, and stopping leaves the movie paused. A short STOMP interruption must not remove the LiveKit participant while presence grace is active.
+8. **Correlate logs:** compare browser UTC timestamps with Spring STOMP/presence logs and the same interval in Nginx logs. Check clock/timezone differences before correlating events.
 
-For an existing systemd deployment, a read-only example (substitute actual unit,
-time window, and configured log paths):
+## Server Evidence
+
+For an existing systemd deployment, substitute the actual time window and configured log paths:
 
 ```sh
 date -u
 journalctl -u syncwatch.service --utc --since "YYYY-MM-DD HH:MM:SS" --until "YYYY-MM-DD HH:MM:SS" --no-pager
 tail -n 200 /var/log/nginx/error.log
+tail -n 200 /var/log/nginx/syncwatch-access.log
 ```
 
-Inspect the applicable access log locally too. A 101 entry may be written only
-when the upgraded connection ends; an ordinary access log may not identify why it
-closed. Existing server/proxy logs may contain IPs, room IDs or other private data:
-share only sanitized event/timestamp/code excerpts, not raw logs, HAR files,
-cookies, headers, or WebSocket frames.
+Do not share raw logs, HAR files, cookies, request headers, WebSocket frames, OAuth codes, or invite URLs. Sanitize addresses and identifiers. The safe SyncWatch access-log format omits query strings and Referer.
 
-## Interpret and Record
+## Interpretation
 
-- effect-cleanup before closure: investigate room/auth/unmount changes. React
-  StrictMode may produce an initial setup/cleanup in development, not every few minutes.
-- heartbeat-lost before closure: client heartbeat watchdog fired; correlate server
-  traffic, visibility and server/proxy errors. Server-detected missing client
-  heartbeats may close the socket without a browser heartbeat-lost event.
-- transport-error / stomp-error: record their order and server close code; raw
-  error bodies are intentionally excluded.
-- transport-closed alone: insufficient to assign cause to Nginx or the browser.
-- On each failure record scenario, A/B, UTC interval, attempt/uptime, visibility,
-  close code/sanitized reason, notices/count, Host continuity, recovery result,
-  and corresponding sanitized server evidence.
+- `effect-cleanup` before closure: investigate room/auth/unmount changes. React StrictMode may cause one development setup/cleanup cycle, not recurring production reconnects.
+- `heartbeat-lost` before closure: correlate browser visibility, Spring traffic, and proxy/network evidence. It does not prove the failing component.
+- `transport-error` or `stomp-error`: record ordering and the sanitized close code; do not copy raw error bodies.
+- `transport-closed` alone: insufficient evidence to assign a cause.
+- Presence grace starts when Spring detects STOMP disconnect, not when the device first loses connectivity.
+- A reconnect inside 30 seconds should replace the obsolete STOMP session association. Grace expiry is intentionally a genuine departure.
 
-Do not declare the recurring production cause confirmed from a passing unit test
-or one unexplained close. Preserve the evidence from both clients and server.
+Record scenario, participant label, UTC interval, attempt/uptime, visibility, close code, participant count, Host continuity, playback revision/time, recovery outcome, and matching sanitized server evidence. Do not declare a recurring production cause confirmed from a passing unit test or one unexplained close.
