@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v0.9.6";
+const CACHE_VERSION = "v1.0.0";
 const SHELL_CACHE = `syncwatch-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `syncwatch-static-${CACHE_VERSION}`;
 const APP_SHELL_FILES = [

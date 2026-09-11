@@ -1,6 +1,6 @@
 # SyncWatch Project Context
 
-Current architecture for v0.8.0 release preparation. Maven, npm, and the health endpoint report 0.8.0; Maven packaging produces syncwatch-0.8.0.jar. This document does not pin a development branch or claim a release is deployed. Read AGENTS.md before changes; the UI standard lives at root UI_UX_STANDARD.md.
+Current architecture for v1.0.0 release preparation. Maven, npm, and the health endpoint report 1.0.0; Maven packaging produces syncwatch-1.0.0.jar. This document does not pin a development branch or claim a release is deployed. Read AGENTS.md before changes; the UI standard lives at root UI_UX_STANDARD.md.
 
 ## Structure
 
@@ -123,7 +123,7 @@ Manual verification should cover account switching, guest invites, refresh, Host
 
 ## Remaining Release Housekeeping
 
-- The private root tooling package retains its existing name, watch-party-mvp; its version is 0.8.0.
+- The private root tooling package retains its existing name, watch-party-mvp; its version is 1.0.0.
 - ISSUES_FACED_AND_FIXES.txt is historical troubleshooting, not the current architecture contract.
 - Production security deployment guidance and an Nginx reference snippet are tracked under `deploy/`; live Nginx, systemd, environment, and secret files remain operator-managed.
 - Bundle-size warnings and browser runtime verification remain separate work. No optimization or behavior change is implied here.

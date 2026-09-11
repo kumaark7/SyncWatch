@@ -76,7 +76,7 @@ test("service worker handles only navigations, hashed assets and explicit shell 
 });
 
 test("service worker cache names use the release version and lookups stay scoped", () => {
-  assert.equal(context.__cacheVersion, "v0.9.6");
+  assert.equal(context.__cacheVersion, "v1.0.0");
   assert.doesNotMatch(workerSource, /caches\.match\(/);
   assert.match(workerSource, /shellCache\.match\("\/"\)/);
   assert.match(workerSource, /cache\.match\(request\)/);

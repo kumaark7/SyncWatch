@@ -12,6 +12,7 @@ import xyz.projectdarkhope.syncwatch.chat.ChatService;
 import xyz.projectdarkhope.syncwatch.google.GoogleDriveOAuthService;
 import xyz.projectdarkhope.syncwatch.sync.SyncEvent;
 
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +38,16 @@ class RoomControllerTest {
             chatService,
             liveKitScreenShare
     );
+
+    @Test
+    void healthReportsCurrentProductVersion() {
+        Map<String, Object> response = controller.health();
+
+        assertThat(response)
+                .containsEntry("ok", true)
+                .containsEntry("backend", "java-spring-boot")
+                .containsEntry("version", "1.0.0");
+    }
 
     @Test
     void roomCreationBindsHostClientIdToAuthenticatedUser() {

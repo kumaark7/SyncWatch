@@ -49,7 +49,7 @@ public class RoomController {
         return Map.of(
                 "ok", true,
                 "backend", "java-spring-boot",
-                "version", "0.8.0"
+                "version", "1.0.0"
         );
     }
 

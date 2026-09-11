@@ -2,7 +2,7 @@
 
 Self-hosted watch parties with synchronized Google Drive movies, room chat, and LiveKit calls and screen sharing.
 
-This describes the current application for **v0.8.0 release preparation**, not a tagged or deployed release.
+This describes the current application for **v1.0.0 release preparation**, not a tagged or deployed release.
 
 ## Features
 
