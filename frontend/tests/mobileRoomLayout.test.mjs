@@ -10,6 +10,8 @@ const roomHeader = readFileSync(new URL("../src/mobile/MobileRoomHeader.tsx", im
 const pageHeader = readFileSync(new URL("../src/mobile/MobilePageHeader.tsx", import.meta.url), "utf8");
 const loginPage = readFileSync(new URL("../src/auth/LoginPage.tsx", import.meta.url), "utf8");
 const guestJoinPage = readFileSync(new URL("../src/auth/GuestJoinPage.tsx", import.meta.url), "utf8");
+const chatComposer = readFileSync(new URL("../src/party/chat/ChatComposer.tsx", import.meta.url), "utf8");
+const chatMessage = readFileSync(new URL("../src/party/chat/ChatMessage.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/style.css", import.meta.url), "utf8");
 
 function count(source, pattern) {
@@ -91,4 +93,32 @@ test("mobile breakpoint reserves safe-area space for compact fixed navigation", 
   assert.match(styles, /\.mobileBottomNav\s*\{[\s\S]*?position: fixed/);
   assert.match(styles, /env\(safe-area-inset-bottom, 0px\)/);
   assert.match(styles, /--mobile-nav-height: 62px/);
+});
+
+test("mobile navigation and chat retain accessible names and panel relationships", () => {
+  assert.match(bottomNav, /aria-pressed=\{activeTab === id\}/);
+  assert.match(bottomNav, /aria-controls=\{controls\}/);
+  assert.match(partyPanel, /aria-label="Participants"/);
+  assert.match(partyPanel, /aria-label="Room chat"/);
+  assert.match(partyPanel, /aria-label="Room call"/);
+  assert.match(chatComposer, /aria-label="Room message"/);
+  assert.match(chatComposer, /aria-describedby="room-chat-status room-chat-limit"/);
+  assert.match(chatMessage, /aria-expanded=\{timestampVisible\}/);
+  assert.match(chatMessage, /className="srOnly"/);
+  assert.doesNotMatch(chatMessage, /aria-label=\{`\$\{timestampVisible \? "Hide" : "Show"\} message timestamp`\}/);
+});
+
+test("mobile touch targets and call controls remain reachable without remounting", () => {
+  assert.match(styles, /\.mobileHeaderRoom button\s*\{[\s\S]*?min-width: 44px;[\s\S]*?min-height: 44px;/);
+  assert.match(styles, /\.newMessagesButton\s*\{[\s\S]*?min-height: 44px;/);
+  assert.match(styles, /\.partyPanel\[data-mobile-tab="call"\] \.callTile\.local \.callControlsWrap[\s\S]*?pointer-events: auto;/);
+  assert.match(styles, /\.partyPanel\[data-mobile-tab="call"\] \.callDeviceOptions button,[\s\S]*?min-height: 44px;/);
+  assert.equal(count(app, /<CallProvider\b/g), 1);
+});
+
+test("mobile room menu establishes keyboard focus and arrow-key navigation", () => {
+  assert.match(roomHeader, /menuButtonRef/);
+  assert.match(roomHeader, /querySelector<HTMLButtonElement>\('\[role="menuitem"\]:not\(:disabled\)'\)/);
+  assert.match(roomHeader, /"ArrowDown", "ArrowUp", "Home", "End"/);
+  assert.match(roomHeader, /menuButtonRef\.current\?\.focus\(\)/);
 });

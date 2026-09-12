@@ -44,13 +44,18 @@ export default function ChatComposer({ disabled, onSend, onError }: Props) {
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
+        aria-label="Room message"
+        aria-describedby="room-chat-status room-chat-limit"
         placeholder="Message..."
         maxLength={MAX_MESSAGE_LENGTH + 1}
         disabled={disabled}
         rows={2}
       />
+      <span id="room-chat-status" className="srOnly" aria-live="polite">
+        {disabled ? "Chat is reconnecting." : "Chat is connected."}
+      </span>
       <div className="chatComposerFooter">
-        <span className={tooLong ? "chatLimit over" : "chatLimit"}>
+        <span id="room-chat-limit" className={tooLong ? "chatLimit over" : "chatLimit"}>
           {text.length}/{MAX_MESSAGE_LENGTH}
         </span>
         <button className="primary compactButton" onClick={send} disabled={!canSend}>

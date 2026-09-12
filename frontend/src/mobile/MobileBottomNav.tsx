@@ -9,20 +9,22 @@ type Props = {
 };
 
 const tabs = [
-  { id: "room", label: "Room + Chat", Icon: House },
-  { id: "chat", label: "Chat", Icon: MessageCircle },
-  { id: "call", label: "Call", Icon: Phone }
+  { id: "room", label: "Room + Chat", controls: "party-people-panel party-chat-panel", Icon: House },
+  { id: "chat", label: "Chat", controls: "party-chat-panel", Icon: MessageCircle },
+  { id: "call", label: "Call", controls: "party-call-panel", Icon: Phone }
 ] as const;
 
 export default function MobileBottomNav({ activeTab, unreadCount, onTabChange }: Props) {
   return (
     <nav className="mobileBottomNav" aria-label="Room navigation">
-      {tabs.map(({ id, label, Icon }) => (
+      {tabs.map(({ id, label, controls, Icon }) => (
         <button
           key={id}
           type="button"
           className={activeTab === id ? "active" : ""}
           aria-current={activeTab === id ? "page" : undefined}
+          aria-pressed={activeTab === id}
+          aria-controls={controls}
           aria-label={label}
           onClick={() => onTabChange(id)}
         >

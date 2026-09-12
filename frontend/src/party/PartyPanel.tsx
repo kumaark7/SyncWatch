@@ -76,7 +76,7 @@ export default function PartyPanel(props: Props) {
           id="party-people-panel"
           className="partyPanelPane partyPeoplePane"
           role="tabpanel"
-          aria-labelledby="party-people-tab"
+          aria-label="Participants"
         >
           <div className="mobilePartySectionHeader" id="room-participants">
             <h2>Participants</h2>
@@ -101,7 +101,7 @@ export default function PartyPanel(props: Props) {
           id="party-chat-panel"
           className="partyPanelPane partyChatPane"
           role="tabpanel"
-          aria-labelledby="party-chat-tab"
+          aria-label="Room chat"
         >
           <div className="mobilePartySectionHeader">
             <span>
@@ -123,7 +123,7 @@ export default function PartyPanel(props: Props) {
           id="party-call-panel"
           className="partyPanelPane partyCallPane"
           role="tabpanel"
-          aria-labelledby="party-call-tab"
+          aria-label="Room call"
         >
           <div className="mobilePartySectionHeader">
             <span>

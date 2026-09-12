@@ -92,7 +92,7 @@ export default function ChatMessage({ messages, own, showTimestamp }: Props) {
                 className="chatMessageBubble"
                 role="button"
                 tabIndex={0}
-                aria-label={`${timestampVisible ? "Hide" : "Show"} message timestamp`}
+                aria-expanded={timestampVisible}
                 onClick={() => toggleTimestamp(message.id, timestampAlwaysVisible)}
                 onKeyDown={(event) => handleTimestampKeyDown(
                   event,
@@ -102,6 +102,9 @@ export default function ChatMessage({ messages, own, showTimestamp }: Props) {
               >
                 {!own && index === 0 && <strong>{firstMessage.senderName}</strong>}
                 <p>{message.text}</p>
+                <span className="srOnly">
+                  {timestampVisible ? "Hide timestamp" : "Show timestamp"}
+                </span>
               </div>
               {timestampVisible && (
                 <time dateTime={new Date(message.timestamp).toISOString()}>

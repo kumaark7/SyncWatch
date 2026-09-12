@@ -81,7 +81,12 @@ export default function GuestJoinPage({ initialRoomId, onJoin }: Props) {
         <Home size={19} aria-hidden="true" />
         <span>Home</span>
       </a>
-      <form className="loginCard guestJoinCard" onSubmit={submit}>
+      <form
+        className="loginCard guestJoinCard"
+        onSubmit={submit}
+        aria-busy={checking || joining}
+        aria-describedby={error ? "guest-join-error" : undefined}
+      >
         <div className="authHeading">
           <img className="authLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />
           <h1>Join Watch Party</h1>
@@ -121,7 +126,7 @@ export default function GuestJoinPage({ initialRoomId, onJoin }: Props) {
           />
         </label>
 
-        {error && <div className="loginError" role="alert">{error}</div>}
+        {error && <div id="guest-join-error" className="loginError" role="alert">{error}</div>}
 
         <button
           className="primary loginButton"

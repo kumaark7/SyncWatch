@@ -42,6 +42,17 @@ body {
   min-width: 0;
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 button, input, select { font: inherit; }
 
 button {
@@ -1138,8 +1149,8 @@ input, select {
 }
 
 .chatMessageItem > time {
-  color: var(--muted-2);
-  font-size: 9px;
+  color: var(--muted);
+  font-size: 11px;
   line-height: 1;
 }
 
@@ -1997,10 +2008,10 @@ input, select {
   }
 
   .mobileHeaderRoom button {
-    width: 36px;
-    min-width: 36px;
-    min-height: 36px;
-    height: 36px;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
     padding: 0;
     border-color: transparent;
     background: transparent;
@@ -2418,8 +2429,23 @@ input, select {
     border-radius: 10px;
   }
 
+  .partyPeoplePane .participantList {
+    gap: 0;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .partyPeoplePane .participant {
+    min-height: 56px;
+    padding: 8px 2px;
+    border: 0;
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 0;
+    background: transparent;
+  }
+
   .participantHostTransfer {
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .partyPanel[data-mobile-tab="room"] .partyChatPane {
@@ -2460,6 +2486,10 @@ input, select {
     min-height: 44px;
   }
 
+  .newMessagesButton {
+    min-height: 44px;
+  }
+
   .partyPanel[data-mobile-tab="call"] .callTilesCount1 {
     grid-template-rows: minmax(220px, 1fr);
   }
@@ -2474,6 +2504,32 @@ input, select {
 
   .partyPanel[data-mobile-tab="call"] .callControls {
     grid-template-columns: repeat(4, minmax(44px, 1fr));
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callTile.local .callControlsWrap,
+  .partyPanel[data-mobile-tab="call"] .callTile .callTileCaption {
+    opacity: 1;
+    transform: none;
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callTile.local .callControlsWrap {
+    pointer-events: auto;
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callControls button,
+  .partyPanel[data-mobile-tab="call"] .callDeviceOptions button,
+  .partyPanel[data-mobile-tab="call"] .callQualitySwitch,
+  .partyPanel[data-mobile-tab="call"] .callQualitySegments button {
+    min-height: 44px;
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callControlCluster {
+    grid-template-columns: minmax(0, 1fr) 28px;
+  }
+
+  .partyPanel[data-mobile-tab="call"] .callDeviceMenuTrigger {
+    width: 28px;
+    min-width: 28px;
   }
 
   .mobileBottomNav {
@@ -3859,7 +3915,7 @@ button.chatToastOpen:hover:not(:disabled) {
 
   .mobilePageHome {
     min-width: 44px;
-    min-height: 40px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;

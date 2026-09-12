@@ -61,7 +61,12 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
   return (
     <main className="loginShell">
       <MobilePageHeader />
-      <form className="loginCard" onSubmit={submit}>
+      <form
+        className="loginCard"
+        onSubmit={submit}
+        aria-busy={loading}
+        aria-describedby={error ? "auth-error" : undefined}
+      >
         <div className="authHeading">
           <img className="authLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />
           <h1>{mode === "signin" ? "Sign In" : "Create Account"}</h1>
@@ -187,7 +192,7 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
           Keep me signed in
         </label>
 
-        {error && <div className="loginError" role="alert">{error}</div>}
+        {error && <div id="auth-error" className="loginError" role="alert">{error}</div>}
 
         <button className="primary loginButton" disabled={loading}>
           {loading
