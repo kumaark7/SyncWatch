@@ -24,7 +24,7 @@ type WindowFrame = {
 type PointerOperation = {
   pointerId: number;
   mode: "drag" | "resize";
-  resizeEdge?: "bottom-left" | "bottom-right";
+  resizeEdge?: "bottom-left" | "bottom-right" | "bottom";
   captureTarget: HTMLElement;
   startX: number;
   startY: number;
@@ -35,10 +35,10 @@ function resizeFrame(
   frame: WindowFrame,
   widthDelta: number,
   heightDelta: number,
-  edge: "bottom-left" | "bottom-right"
+  edge: "bottom-left" | "bottom-right" | "bottom"
 ) {
   const { minWidth, minHeight, maxWidth, maxHeight } = limits();
-  const width = Math.min(Math.max(frame.width + widthDelta, minWidth), maxWidth);
+  const width = Math.min(Math.max(frame.width + (edge === "bottom" ? 0 : widthDelta), minWidth), maxWidth);
   const height = Math.min(Math.max(frame.height + heightDelta, minHeight), maxHeight);
   const x = edge === "bottom-left"
     ? frame.x + frame.width - width
@@ -112,10 +112,6 @@ export default function useFloatingWindow() {
       return;
     }
 
-    if (mode === "resize" && mobile) {
-      return;
-    }
-
     operationRef.current = {
       pointerId: event.pointerId,
       mode,
@@ -129,7 +125,7 @@ export default function useFloatingWindow() {
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
     event.stopPropagation();
-  }, [frame, mobile]);
+  }, [frame]);
 
   const updateOperation = useCallback((pointerId: number, clientX: number, clientY: number) => {
     const operation = operationRef.current;
@@ -215,7 +211,7 @@ export default function useFloatingWindow() {
     startDrag: (event: ReactPointerEvent<HTMLElement>) => startOperation(event, "drag"),
     startResize: (
       event: ReactPointerEvent<HTMLElement>,
-      edge: "bottom-left" | "bottom-right" = "bottom-right"
+      edge: "bottom-left" | "bottom-right" | "bottom" = "bottom-right"
     ) => startOperation(event, "resize", edge),
     cancelOperation: (event: ReactPointerEvent<HTMLElement>) => finishOperation(event.pointerId),
     moveBy,

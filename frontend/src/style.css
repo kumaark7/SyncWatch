@@ -494,6 +494,10 @@ input, select {
 
 .videoFrame .video { display: block; }
 
+.videoFrame .video::-webkit-media-controls-fullscreen-button {
+  display: none;
+}
+
 .gestureControl {
   position: absolute;
   top: 12px;
@@ -2805,10 +2809,10 @@ input, select {
 .floatingCallDragGrip {
   position: absolute;
   top: 0;
-  right: 44px;
-  left: 44px;
+  right: 0;
+  left: 0;
   z-index: 5;
-  height: 28px;
+  height: 24px;
   display: grid;
   place-items: start center;
   cursor: grab;
@@ -2821,12 +2825,12 @@ input, select {
 }
 
 .floatingCallGripMark {
-  width: 34px;
+  width: calc(100% - 16px);
   height: 4px;
   margin-top: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.42);
-  opacity: 0;
+  opacity: 0.6;
   transition: opacity 140ms ease, background 140ms ease;
 }
 
@@ -2878,6 +2882,15 @@ input, select {
   padding: 0 8px;
   color: var(--text);
   font-size: 10px;
+}
+
+@container floating-call (max-height: 180px) {
+  .floatingCallUtilities button:not(.floatingShowSelf) {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    min-height: 24px;
+  }
 }
 
 .floatingCallStatusDot {
@@ -2999,6 +3012,15 @@ input, select {
 }
 
 @media (pointer: coarse) {
+  .floatingCallGrid .callControls {
+    padding: 3px;
+  }
+
+  .floatingCallGrid .callControlsWrap {
+    bottom: 28px;
+    max-height: calc(100% - 48px);
+  }
+
   .floatingCallGrid .callControls button {
     min-height: 44px;
   }
@@ -3079,8 +3101,8 @@ input, select {
   position: absolute;
   bottom: 0;
   z-index: 12;
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 28px;
   touch-action: none;
   pointer-events: auto;
   opacity: 0.48;
@@ -3095,6 +3117,23 @@ input, select {
 .floatingCallResizeHandle.bottomLeft {
   left: 0;
   cursor: nesw-resize;
+}
+
+.floatingCallResizeHandle.bottomEdge {
+  right: 24px;
+  left: 24px;
+  width: auto;
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.floatingCallResizeHandle.bottomEdge::after {
+  right: 0;
+  bottom: 3px;
+  left: 0;
+  width: auto;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .floatingCallResizeHandle:hover,
@@ -3825,9 +3864,7 @@ button.chatToastOpen:hover:not(:disabled) {
   }
 
   .floatingCallDragGrip {
-    right: 52px;
-    left: 8px;
-    height: 40px;
+    height: 24px;
   }
 
   .floatingCallUtilities {

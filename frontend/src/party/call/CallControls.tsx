@@ -142,7 +142,7 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
         <p className="callError" role="alert">{error || pushToTalkError}</p>
       )}
       <div ref={controlsRef} className="callControls" aria-label="Call controls">
-        <div className="callControlCluster">
+        <div className="callControlCluster callControlPrimary">
           <button
             className={`callControlIcon callControlMain ${isMicrophoneEnabled ? "active" : "muted"}`}
             disabled={busyControl !== null}
@@ -178,6 +178,48 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
             <CallDeviceMenu
               kind="audioinput"
               anchorRef={microphoneMenuButtonRef}
+              onSelectDevice={switchInputDevice}
+              onClose={() => setOpenMenu(null)}
+              onError={setError}
+            />
+          )}
+        </div>
+        <div className="callControlCluster callControlPrimary">
+          <button
+            className={`callControlIcon callControlMain ${isCameraEnabled ? "active" : ""}`}
+            disabled={busyControl !== null}
+            aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
+            aria-pressed={isCameraEnabled}
+            title={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
+            onFocus={onInteract}
+            onPointerDown={onInteract}
+            onClick={() => void toggleCamera()}
+          >
+            {isCameraEnabled
+              ? <Video size={17} strokeWidth={2.2} aria-hidden="true" />
+              : <VideoOff size={17} strokeWidth={2.2} aria-hidden="true" />}
+          </button>
+          <button
+            ref={cameraMenuButtonRef}
+            className="callDeviceMenuTrigger"
+            aria-label="Choose camera"
+            title="Choose camera"
+            aria-haspopup="menu"
+            aria-expanded={openMenu === "videoinput"}
+            onFocus={onInteract}
+            onPointerDown={onInteract}
+            onClick={() => setOpenMenu((current) => (
+              current === "videoinput" ? null : "videoinput"
+            ))}
+          >
+            {openMenu === "videoinput"
+              ? <ChevronUp size={14} strokeWidth={2.6} aria-hidden="true" />
+              : <ChevronDown size={14} strokeWidth={2.6} aria-hidden="true" />}
+          </button>
+          {openMenu === "videoinput" && (
+            <CallDeviceMenu
+              kind="videoinput"
+              anchorRef={cameraMenuButtonRef}
               onSelectDevice={switchInputDevice}
               onClose={() => setOpenMenu(null)}
               onError={setError}
@@ -242,48 +284,6 @@ export default function CallControls({ onLeave, onHideSelf, onInteract }: Props)
           <Radio size={17} strokeWidth={2.2} aria-hidden="true" />
           {pushToTalkEnabled && <span className="callControlStateDot" aria-hidden="true" />}
         </button>
-        <div className="callControlCluster">
-          <button
-            className={`callControlIcon callControlMain ${isCameraEnabled ? "active" : ""}`}
-            disabled={busyControl !== null}
-            aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
-            aria-pressed={isCameraEnabled}
-            title={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
-            onFocus={onInteract}
-            onPointerDown={onInteract}
-            onClick={() => void toggleCamera()}
-          >
-            {isCameraEnabled
-              ? <Video size={17} strokeWidth={2.2} aria-hidden="true" />
-              : <VideoOff size={17} strokeWidth={2.2} aria-hidden="true" />}
-          </button>
-          <button
-            ref={cameraMenuButtonRef}
-            className="callDeviceMenuTrigger"
-            aria-label="Choose camera"
-            title="Choose camera"
-            aria-haspopup="menu"
-            aria-expanded={openMenu === "videoinput"}
-            onFocus={onInteract}
-            onPointerDown={onInteract}
-            onClick={() => setOpenMenu((current) => (
-              current === "videoinput" ? null : "videoinput"
-            ))}
-          >
-            {openMenu === "videoinput"
-              ? <ChevronUp size={14} strokeWidth={2.6} aria-hidden="true" />
-              : <ChevronDown size={14} strokeWidth={2.6} aria-hidden="true" />}
-          </button>
-          {openMenu === "videoinput" && (
-            <CallDeviceMenu
-              kind="videoinput"
-              anchorRef={cameraMenuButtonRef}
-              onSelectDevice={switchInputDevice}
-              onClose={() => setOpenMenu(null)}
-              onError={setError}
-            />
-          )}
-        </div>
         <button
           ref={qualityMenuButtonRef}
           className={`callControlIcon ${openMenu === "quality" ? "active" : ""}`}

@@ -153,29 +153,40 @@ export default function FloatingCallWindow({
         </div>
       )}
 
-      {!floating.mobile && (
-        <>
-          <div
-            className="floatingCallResizeHandle bottomLeft"
-            role="separator"
-            tabIndex={-1}
-            aria-label="Resize call window from bottom left"
-            title="Resize call window"
-            onPointerDown={(event) => floating.startResize(event, "bottom-left")}
-            onLostPointerCapture={floating.cancelOperation}
-          />
-          <div
-            className="floatingCallResizeHandle bottomRight"
-            role="separator"
-            tabIndex={0}
-            aria-label="Resize call window"
-            title="Resize call window"
-            onPointerDown={(event) => floating.startResize(event, "bottom-right")}
-            onLostPointerCapture={floating.cancelOperation}
-            onKeyDown={handleResizeKeyDown}
-          />
-        </>
-      )}
+      <div
+        className="floatingCallResizeHandle bottomEdge"
+        role="separator"
+        aria-orientation="horizontal"
+        tabIndex={0}
+        aria-label="Resize call window height with up and down arrow keys"
+        title="Drag bottom edge to resize call window height"
+        onPointerDown={(event) => floating.startResize(event, "bottom")}
+        onLostPointerCapture={floating.cancelOperation}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+            handleResizeKeyDown(event);
+          }
+        }}
+      />
+      <div
+        className="floatingCallResizeHandle bottomLeft"
+        role="separator"
+        tabIndex={-1}
+        aria-label="Resize call window from bottom left"
+        title="Resize call window"
+        onPointerDown={(event) => floating.startResize(event, "bottom-left")}
+        onLostPointerCapture={floating.cancelOperation}
+      />
+      <div
+        className="floatingCallResizeHandle bottomRight"
+        role="separator"
+        tabIndex={0}
+        aria-label="Resize call window"
+        title="Resize call window"
+        onPointerDown={(event) => floating.startResize(event, "bottom-right")}
+        onLostPointerCapture={floating.cancelOperation}
+        onKeyDown={handleResizeKeyDown}
+      />
     </section>
   );
 }
