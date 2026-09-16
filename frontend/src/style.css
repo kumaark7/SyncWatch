@@ -174,6 +174,25 @@ input, select {
   object-fit: contain;
 }
 
+.logoHomeLink {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.logoHomeLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.logoHomeLink img {
+  display: block;
+  min-width: 0;
+}
+
 .brandBlock span {
   color: var(--muted);
   font-size: 15px;
@@ -2946,6 +2965,11 @@ input, select {
   right: 5px;
   bottom: 32px;
   left: 5px;
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
 }
 
 .floatingCallGrid .callControls button {
@@ -2955,8 +2979,9 @@ input, select {
 }
 
 .floatingCallGrid .callControlIcon svg {
-  width: 22px;
-  height: 22px;
+  width: clamp(16px, 6cqi, 22px);
+  height: clamp(16px, 6cqi, 22px);
+  flex: none;
 }
 
 .floatingCallGrid .callControlCluster {
@@ -2969,11 +2994,35 @@ input, select {
 }
 
 .floatingCallGrid .callDeviceMenuTrigger svg {
-  width: 17px;
-  height: 17px;
+  width: clamp(12px, 4.5cqi, 17px);
+  height: clamp(12px, 4.5cqi, 17px);
+}
+
+@media (pointer: coarse) {
+  .floatingCallGrid .callControls button {
+    min-height: 44px;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .floatingCallGrid .callControls {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .floatingCallGrid .callControls button {
+    min-height: clamp(28px, 11cqi, 42px);
+  }
+
+  .floatingCallGrid .callControlCluster {
+    grid-template-columns: minmax(0, 1fr) 24px;
+  }
+
+  .floatingCallGrid .callDeviceMenuTrigger {
+    width: 24px;
+    min-width: 24px;
+  }
+
   @container floating-call (max-width: 280px) {
 
     .floatingCallGrid .callRemoteAudioButton,
@@ -3906,7 +3955,7 @@ button.chatToastOpen:hover:not(:disabled) {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   }
 
-  .mobilePageHeader > img {
+  .mobilePageHeader .logoHomeLink img {
     width: auto;
     height: 34px;
     max-width: min(144px, 46vw);
@@ -3947,7 +3996,7 @@ button.chatToastOpen:hover:not(:disabled) {
     box-shadow: none;
   }
 
-  .loginCard .authLogo {
+  .loginCard .authLogoLink {
     display: none;
   }
 

@@ -75,7 +75,7 @@ test("authentication and guest entry share a mobile brand header", () => {
   assert.match(guestJoinPage, /<MobilePageHeader showHome \/>/);
   assert.match(guestJoinPage, /className="guestHomeLink" href="\/" aria-label="Home"/);
   assert.match(pageHeader, /className="mobilePageHeader"/);
-  assert.match(pageHeader, /syncwatch-logo\.png/);
+  assert.match(pageHeader, /<LogoHomeLink \/>/);
   assert.match(pageHeader, /className="mobilePageHome" href="\/" aria-label="Home"/);
   assert.doesNotMatch(pageHeader, /onJoin|onSubmit|fetch/);
   assert.match(styles, /@media \(max-width: 768px\) \{[\s\S]*?\.guestHomeLink \{[\s\S]*?display: none/);

@@ -2,6 +2,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import MobilePageHeader from "../mobile/MobilePageHeader";
+import LogoHomeLink from "../components/LogoHomeLink";
 
 type Props = {
   inviteRoomId: string;
@@ -68,7 +69,7 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
         aria-describedby={error ? "auth-error" : undefined}
       >
         <div className="authHeading">
-          <img className="authLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />
+          <LogoHomeLink className="authLogo" />
           <h1>{mode === "signin" ? "Sign In" : "Create Account"}</h1>
           <p>
             {inviteRoomId

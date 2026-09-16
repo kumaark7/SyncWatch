@@ -15,6 +15,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
+import LogoHomeLink from "../components/LogoHomeLink";
 
 type Props = {
   roomId: string;
@@ -99,7 +100,7 @@ export default function MobileRoomHeader(props: Props) {
 
   return (
     <header className="mobileRoomHeader">
-      <img className="mobileRoomLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />
+      <LogoHomeLink className="mobileRoomLogo" inRoom onLeaveRoom={props.onLeaveRoom} />
       <div className="mobileHeaderRoom">
         <span>Room</span>
         <strong>{props.roomId}</strong>

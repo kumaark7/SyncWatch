@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
 import ConnectionStatus from "./components/ConnectionStatus";
+import LogoHomeLink from "./components/LogoHomeLink";
 import FullscreenToggle from "./components/FullscreenToggle";
 import MediaInfo from "./components/MediaInfo";
 import TheaterToggle from "./components/TheaterToggle";
@@ -1469,10 +1470,10 @@ function AuthenticatedApp({
       )}
       <header className="topBar">
         <div className="brandBlock">
-          <img
+          <LogoHomeLink
             className="brandLogo"
-            src="/brand/syncwatch-logo.png"
-            alt="SyncWatch"
+            inRoom={Boolean(roomId)}
+            onLeaveRoom={() => void leaveRoom()}
           />
           {roomId && (
             <span className="roomTitle" title={`Room code: ${roomId}`}>

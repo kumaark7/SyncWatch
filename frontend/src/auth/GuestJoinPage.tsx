@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Home } from "lucide-react";
 import { generateDisplayName } from "../generatedNames";
 import MobilePageHeader from "../mobile/MobilePageHeader";
+import LogoHomeLink from "../components/LogoHomeLink";
 import { getGuestRoom } from "./authApi";
 
 type Props = {
@@ -88,7 +89,7 @@ export default function GuestJoinPage({ initialRoomId, onJoin }: Props) {
         aria-describedby={error ? "guest-join-error" : undefined}
       >
         <div className="authHeading">
-          <img className="authLogo" src="/brand/syncwatch-logo.png" alt="SyncWatch" />
+          <LogoHomeLink className="authLogo" />
           <h1>Join Watch Party</h1>
           <p>Enter your name to join as a guest.</p>
         </div>
