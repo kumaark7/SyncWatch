@@ -260,6 +260,69 @@ input, select {
   line-height: 1;
 }
 
+.topActions > .roomActionsMenu {
+  position: relative;
+  min-height: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.roomActionsMenuTrigger {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.roomActionsMenuDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 120;
+  width: 220px;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #0b111c;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.52);
+}
+
+.roomActionsMenuDropdown button {
+  width: 100%;
+  min-height: 42px;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  padding: 0 11px;
+  color: #dce5f5;
+}
+
+.roomActionsMenuDropdown button.warning {
+  color: #ffd59c;
+}
+
+.roomActionsMenuDropdown button.danger {
+  color: #ffabb2;
+}
+
+.roomActionsMenuDropdown button.warning:hover:not(:disabled) {
+  background: rgba(123, 77, 20, 0.28);
+}
+
+.roomActionsMenuDropdown button.danger:hover:not(:disabled) {
+  background: rgba(112, 31, 41, 0.42);
+  color: #ffd0d4;
+}
+
+.roomActionsMenuSeparator {
+  height: 1px;
+  margin: 3px 8px;
+  background: var(--border-soft);
+}
+
 .hostPill,
 .userPill,
 .connectionStatus,
@@ -323,27 +386,6 @@ input, select {
   margin-bottom: 0;
   min-height: 88px;
   padding: 8px 20px;
-}
-
-.topActions .headerLeaveRoom {
-  border-color: rgba(125, 162, 255, 0.34);
-  color: #c8d7ff;
-}
-
-.topActions .headerLeaveRoom:hover:not(:disabled) {
-  border-color: rgba(125, 162, 255, 0.58);
-  background: rgba(47, 68, 112, 0.38);
-}
-
-.topActions .headerCloseRoom {
-  border-color: rgba(255, 107, 117, 0.38);
-  color: #ffadb4;
-}
-
-.topActions .headerCloseRoom:hover:not(:disabled) {
-  border-color: rgba(255, 107, 117, 0.62);
-  background: rgba(112, 31, 41, 0.42);
-  color: #ffd0d4;
 }
 
 .homeShell .brandLogo {
@@ -1022,14 +1064,6 @@ input, select {
   display: inline-flex;
   flex-shrink: 0;
   color: #facc15;
-}
-
-.headerCloseVideo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 44px;
 }
 
 .participantText {

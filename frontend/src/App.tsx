@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import GuestJoinPage from "./auth/GuestJoinPage";
@@ -9,6 +8,7 @@ import OfflineNotice from "./components/OfflineNotice";
 import LogoHomeLink from "./components/LogoHomeLink";
 import FullscreenToggle from "./components/FullscreenToggle";
 import MediaInfo from "./components/MediaInfo";
+import RoomActionsMenu from "./components/RoomActionsMenu";
 import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
 import DrivePicker from "./DrivePicker";
@@ -1524,21 +1524,14 @@ function AuthenticatedApp({
             />
           )}
           {hasRoom && (
-            <button className="headerLeaveRoom" onClick={() => void leaveRoom()}>
-              Leave Room
-            </button>
-          )}
-          {room?.isHost && room.hasFile && (
-            <button className="headerCloseVideo" disabled={closingVideo}
-              onClick={() => void closeVideo()} title="Close current video">
-              <X size={18} aria-hidden="true" />
-              {closingVideo ? "Closing Video..." : "Close Video"}
-            </button>
-          )}
-          {room?.isHost && !guestSession && (
-            <button className="headerCloseRoom" onClick={() => void closeRoom()}>
-              Close Room
-            </button>
+            <RoomActionsMenu
+              showCloseVideo={Boolean(room?.isHost && room.hasFile)}
+              showCloseRoom={Boolean(room?.isHost && !guestSession)}
+              closingVideo={closingVideo}
+              onLeaveRoom={() => void leaveRoom()}
+              onCloseVideo={() => void closeVideo()}
+              onCloseRoom={() => void closeRoom()}
+            />
           )}
           <span className="userPill">{username}</span>
           {!roomId && (
