@@ -5,6 +5,7 @@ import { generateDisplayName } from "../generatedNames";
 import MobilePageHeader from "../mobile/MobilePageHeader";
 import LogoHomeLink from "../components/LogoHomeLink";
 import { getGuestRoom } from "./authApi";
+import { userErrorMessage } from "../userError";
 
 type Props = {
   initialRoomId: string;
@@ -40,7 +41,7 @@ export default function GuestJoinPage({ initialRoomId, onJoin }: Props) {
         .catch((cause) => {
           if (!cancelled) {
             setRoomName("");
-            setError(cause instanceof Error ? cause.message : "Could not check this room");
+            setError(userErrorMessage(cause, "Could not check this room. Please try again."));
           }
         })
         .finally(() => {
@@ -69,7 +70,7 @@ export default function GuestJoinPage({ initialRoomId, onJoin }: Props) {
       await onJoin(normalizedRoomId, name);
       window.history.replaceState({}, "", `/room/${normalizedRoomId}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not join this room");
+      setError(userErrorMessage(cause, "Could not join this room. Please try again."));
     } finally {
       setJoining(false);
     }

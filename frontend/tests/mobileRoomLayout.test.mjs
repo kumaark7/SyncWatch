@@ -11,7 +11,9 @@ const pageHeader = readFileSync(new URL("../src/mobile/MobilePageHeader.tsx", im
 const loginPage = readFileSync(new URL("../src/auth/LoginPage.tsx", import.meta.url), "utf8");
 const guestJoinPage = readFileSync(new URL("../src/auth/GuestJoinPage.tsx", import.meta.url), "utf8");
 const chatComposer = readFileSync(new URL("../src/party/chat/ChatComposer.tsx", import.meta.url), "utf8");
+const chatPanel = readFileSync(new URL("../src/party/chat/ChatPanel.tsx", import.meta.url), "utf8");
 const chatMessage = readFileSync(new URL("../src/party/chat/ChatMessage.tsx", import.meta.url), "utf8");
+const roomShortcuts = readFileSync(new URL("../src/RoomKeyboardShortcuts.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/style.css", import.meta.url), "utf8");
 
 function count(source, pattern) {
@@ -106,6 +108,16 @@ test("mobile navigation and chat retain accessible names and panel relationships
   assert.match(chatMessage, /aria-expanded=\{timestampVisible\}/);
   assert.match(chatMessage, /className="srOnly"/);
   assert.doesNotMatch(chatMessage, /aria-label=\{`\$\{timestampVisible \? "Hide" : "Show"\} message timestamp`\}/);
+});
+
+test("chat activation scrolls latest and the C shortcut requests composer focus", () => {
+  assert.match(app, /function openChatComposer\(\)/);
+  assert.match(app, /setChatFocusRequest\(\(request\) => request \+ 1\)/);
+  assert.match(roomShortcuts, /onOpenChat\(\)/);
+  assert.match(partyPanel, /active=\{props\.activeTab === "chat" \|\| props\.mobileTab === "chat"\}/);
+  assert.match(chatPanel, /scrollChatToLatest\(list\)/);
+  assert.match(chatPanel, /focusChatInput\(composerRef\.current\)/);
+  assert.equal(count(partyPanel, /<ChatPanel\b/g), 1);
 });
 
 test("mobile touch targets and call controls remain reachable without remounting", () => {

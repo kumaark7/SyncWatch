@@ -1,4 +1,4 @@
-import { KeyboardEvent, useState } from "react";
+import { forwardRef, KeyboardEvent, useState } from "react";
 
 const MAX_MESSAGE_LENGTH = 1000;
 
@@ -8,7 +8,10 @@ type Props = {
   onError?: (message: string) => void;
 };
 
-export default function ChatComposer({ disabled, onSend, onError }: Props) {
+const ChatComposer = forwardRef<HTMLTextAreaElement, Props>(function ChatComposer(
+  { disabled, onSend, onError },
+  ref
+) {
   const [text, setText] = useState("");
   const trimmed = text.trim();
   const tooLong = text.length > MAX_MESSAGE_LENGTH;
@@ -41,6 +44,7 @@ export default function ChatComposer({ disabled, onSend, onError }: Props) {
   return (
     <div className="chatComposer">
       <textarea
+        ref={ref}
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
@@ -64,4 +68,6 @@ export default function ChatComposer({ disabled, onSend, onError }: Props) {
       </div>
     </div>
   );
-}
+});
+
+export default ChatComposer;

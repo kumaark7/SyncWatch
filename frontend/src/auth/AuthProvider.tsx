@@ -64,6 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(nextSession);
         }
       })
+      .catch(() => {
+        if (!cancelled) {
+          setSession(ANONYMOUS_SESSION);
+        }
+      })
       .finally(() => {
         if (!cancelled) {
           setLoading(false);

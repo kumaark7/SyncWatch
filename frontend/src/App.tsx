@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
 import ConnectionStatus from "./components/ConnectionStatus";
+import OfflineNotice from "./components/OfflineNotice";
 import LogoHomeLink from "./components/LogoHomeLink";
 import FullscreenToggle from "./components/FullscreenToggle";
 import MediaInfo from "./components/MediaInfo";
@@ -44,6 +45,7 @@ import {
 import type { ServerClockEstimate } from "./serverClock";
 import { ROOM_CLIENT_ID_STORAGE_KEY, useRoomSocket } from "./useRoomSocket";
 import type { Participant, RoomState, SyncEvent } from "./types";
+import { userErrorMessage } from "./userError";
 import "./style.css";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -240,6 +242,9 @@ function AuthenticatedApp({
   const [room, setRoom] =
     useState<RoomState | null>(null);
 
+  const [roomLoadError, setRoomLoadError] = useState("");
+  const [roomLoadRetry, setRoomLoadRetry] = useState(0);
+
   const [acceptedPlaybackEvent, setAcceptedPlaybackEvent] =
     useState<SyncEvent | null>(null);
 
@@ -257,6 +262,8 @@ function AuthenticatedApp({
 
   const [mobileTab, setMobileTab] =
     useState<MobileTab>("room");
+
+  const [chatFocusRequest, setChatFocusRequest] = useState(0);
 
   const [chatUnreadCount, setChatUnreadCount] =
     useState(0);
@@ -521,6 +528,8 @@ function AuthenticatedApp({
     setChatUnreadCount(0);
     setPartyTab("people");
     setMobileTab("room");
+    setChatFocusRequest(0);
+    setRoomLoadError("");
     setSelfViewHidden(false);
     setAcceptedPlaybackEvent(null);
     setServerClockEstimate(null);
@@ -568,16 +577,25 @@ function AuthenticatedApp({
     let cancelled = false;
     loadRoomSnapshot()
       .then((data) => {
-        if (!cancelled) applyInitialRoomSnapshot(data);
+        if (!cancelled) {
+          setRoomLoadError("");
+          applyInitialRoomSnapshot(data);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setRoom(null);
+      .catch((cause) => {
+        if (!cancelled) {
+          setRoom(null);
+          setRoomLoadError(userErrorMessage(
+            cause,
+            "Could not load this room. Please try again."
+          ));
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [applyInitialRoomSnapshot, loadRoomSnapshot, roomId]);
+  }, [applyInitialRoomSnapshot, loadRoomSnapshot, roomId, roomLoadRetry]);
 
   useEffect(() => {
     if (!roomId
@@ -836,28 +854,32 @@ function AuthenticatedApp({
       return;
     }
 
-    const activeClientId = ensureClientIdentity();
-    const response = await authenticatedFetch(
-      `${API_URL}/api/rooms?clientId=${encodeURIComponent(activeClientId)}&roomName=${encodeURIComponent(cleanedRoomName)}`,
-      {
-        method: "POST",
-        credentials: "include"
-      }
-    );
+    try {
+      const activeClientId = ensureClientIdentity();
+      const response = await authenticatedFetch(
+        `${API_URL}/api/rooms?clientId=${encodeURIComponent(activeClientId)}&roomName=${encodeURIComponent(cleanedRoomName)}`,
+        {
+          method: "POST",
+          credentials: "include"
+        }
+      );
 
-    if (!response.ok) {
-      if (response.status !== 401) {
-        alert("Could not create room.");
+      if (!response.ok) {
+        if (response.status !== 401) {
+          alert("Could not create room.");
+        }
+        return;
       }
-      return;
+
+      const data = await response.json();
+      history.pushState({}, "", `/room/${data.roomId}`);
+      setRoomName(cleanedRoomName);
+      setRoomId(data.roomId);
+      setJoinCode(data.roomId);
+      setRoom(data);
+    } catch (cause) {
+      alert(userErrorMessage(cause, "Could not create room. Please try again."));
     }
-
-    const data = await response.json();
-    history.pushState({}, "", `/room/${data.roomId}`);
-    setRoomName(cleanedRoomName);
-    setRoomId(data.roomId);
-    setJoinCode(data.roomId);
-    setRoom(data);
   }
 
   async function joinRoom() {
@@ -870,23 +892,27 @@ function AuthenticatedApp({
       return;
     }
 
-    const activeClientId = ensureClientIdentity();
-    const response = await authenticatedFetch(
-      `${API_URL}/api/rooms/${code}?clientId=${encodeURIComponent(activeClientId)}`,
-      { credentials: "include" }
-    );
+    try {
+      const activeClientId = ensureClientIdentity();
+      const response = await authenticatedFetch(
+        `${API_URL}/api/rooms/${code}?clientId=${encodeURIComponent(activeClientId)}`,
+        { credentials: "include" }
+      );
 
-    if (!response.ok) {
-      if (response.status !== 401) {
-        alert("Room not found.");
+      if (!response.ok) {
+        if (response.status !== 401) {
+          alert("Room not found.");
+        }
+        return;
       }
-      return;
-    }
 
-    const data = await response.json();
-    history.pushState({}, "", `/room/${code}`);
-    setRoomId(code);
-    setRoom(data);
+      const data = await response.json();
+      history.pushState({}, "", `/room/${code}`);
+      setRoomId(code);
+      setRoom(data);
+    } catch (cause) {
+      alert(userErrorMessage(cause, "Could not join this room. Please try again."));
+    }
   }
 
   function saveNameTag() {
@@ -1270,6 +1296,8 @@ function AuthenticatedApp({
     setTheaterMode(false);
     setPartyTab("people");
     setMobileTab("room");
+    setChatFocusRequest(0);
+    setRoomLoadError("");
     setChatUnreadCount(0);
     setSelfViewHidden(false);
     setToast("");
@@ -1388,6 +1416,16 @@ function AuthenticatedApp({
     }
   }
 
+  function openChatComposer() {
+    if (mobileRoomLayout) {
+      selectMobileTab("chat");
+    } else {
+      setPartyTab("chat");
+      setChatUnreadCount(0);
+    }
+    setChatFocusRequest((request) => request + 1);
+  }
+
   function showMobileParticipants() {
     setMobileTab("room");
     window.setTimeout(() => {
@@ -1396,18 +1434,6 @@ function AuthenticatedApp({
         block: "start"
       });
     }, 0);
-  }
-
-  function toggleChatView() {
-    if (mobileRoomLayout) {
-      selectMobileTab(mobileTab === "chat" ? "room" : "chat");
-      return;
-    }
-
-    setPartyTab((current) => current === "chat" ? "people" : "chat");
-    if (partyTab !== "chat") {
-      setChatUnreadCount(0);
-    }
   }
 
   const canManageGoogle = Boolean(room?.isHost);
@@ -1599,8 +1625,23 @@ function AuthenticatedApp({
       ) : !room ? (
         <section className="homePanel compactHome">
           <div className="roomEntryCard">
-            <h1>Room not found</h1>
-            <p>Check the invite link or enter a different room code.</p>
+            <h1>
+              {!roomLoadError
+                ? "Connecting to room"
+                : roomLoadError === "Room not found" ? "Room not found" : "Can't load this room"}
+            </h1>
+            <p>{roomLoadError || "Connecting to the room..."}</p>
+            {roomLoadError && roomLoadError !== "Room not found" && (
+              <button
+                className="primary"
+                onClick={() => {
+                  setRoomLoadError("");
+                  setRoomLoadRetry((attempt) => attempt + 1);
+                }}
+              >
+                Try again
+              </button>
+            )}
             <div className="join">
               <input
                 value={joinCode}
@@ -1628,7 +1669,7 @@ function AuthenticatedApp({
           <PushToTalkProvider>
             <RoomKeyboardShortcuts
               playerRef={videoPlayerRef}
-              onToggleChat={toggleChatView}
+              onOpenChat={openChatComposer}
               onToggleFullscreen={() => void toggleContainerFullscreen()}
               onError={showToast}
             />
@@ -1705,6 +1746,7 @@ function AuthenticatedApp({
                   activeTab={partyTab}
                   mobileTab={mobileTab}
                   unreadCount={chatUnreadCount}
+                  chatFocusRequest={chatFocusRequest}
                   selfViewHidden={selfViewHidden}
                   onTabChange={setPartyTab}
                   onClearUnread={() => setChatUnreadCount(0)}
@@ -1760,6 +1802,7 @@ function AuthenticatedApp({
 export default function App() {
   return (
     <AuthProvider>
+      <OfflineNotice />
       <AppContent />
     </AuthProvider>
   );

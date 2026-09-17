@@ -17,6 +17,7 @@ type Props = {
   activeTab: PartyTab;
   mobileTab: MobileTab;
   unreadCount: number;
+  chatFocusRequest: number;
   selfViewHidden: boolean;
   onTabChange: (tab: PartyTab) => void;
   onClearUnread: () => void;
@@ -116,6 +117,8 @@ export default function PartyPanel(props: Props) {
             connected={props.connected}
             onSend={props.onSendChat}
             onError={props.onChatError}
+            active={props.activeTab === "chat" || props.mobileTab === "chat"}
+            focusRequest={props.chatFocusRequest}
           />
         </section>
 

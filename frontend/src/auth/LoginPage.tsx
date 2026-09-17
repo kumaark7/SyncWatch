@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import MobilePageHeader from "../mobile/MobilePageHeader";
 import LogoHomeLink from "../components/LogoHomeLink";
+import { userErrorMessage } from "../userError";
 
 type Props = {
   inviteRoomId: string;
@@ -51,7 +52,7 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
         await onSignIn(identifier, password, rememberMe);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Authentication failed");
+      setError(userErrorMessage(cause, "Authentication failed. Please try again."));
     } finally {
       setLoading(false);
     }

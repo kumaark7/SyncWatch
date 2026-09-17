@@ -7,7 +7,7 @@ import type { VideoPlayerHandle } from "./VideoPlayer";
 
 type Props = {
   playerRef: RefObject<VideoPlayerHandle | null>;
-  onToggleChat: () => void;
+  onOpenChat: () => void;
   onToggleFullscreen: () => void;
   onError: (message: string) => void;
 };
@@ -18,7 +18,7 @@ const SHORTCUTS = [
   ["Up / Down", "Adjust local volume by 5%"],
   ["M", "Mute or unmute microphone"],
   ["V", "Turn camera on or off"],
-  ["C", "Show or hide chat"],
+  ["C", "Open chat and focus the message box"],
   ["Hold T", "Push to Talk"],
   ["F", "Toggle fullscreen"],
   ["?", "Show or hide this help"]
@@ -36,7 +36,7 @@ function isEditableTarget(target: EventTarget | null) {
 
 export default function RoomKeyboardShortcuts({
   playerRef,
-  onToggleChat,
+  onOpenChat,
   onToggleFullscreen,
   onError
 }: Props) {
@@ -93,7 +93,7 @@ export default function RoomKeyboardShortcuts({
 
       if (key === "c") {
         event.preventDefault();
-        onToggleChat();
+        onOpenChat();
         return;
       }
 
@@ -126,7 +126,7 @@ export default function RoomKeyboardShortcuts({
     helpOpen,
     isCameraEnabled,
     onError,
-    onToggleChat,
+    onOpenChat,
     onToggleFullscreen,
     playerRef,
     setCameraEnabled,

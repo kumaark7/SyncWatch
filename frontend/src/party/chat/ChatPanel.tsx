@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ChatComposer from "./ChatComposer";
 import ChatMessage from "./ChatMessage";
+import { focusChatInput, scrollChatToLatest } from "./chatViewport";
 import type { ChatMessage as ChatMessageType } from "./types";
 
 type Props = {
@@ -9,6 +10,8 @@ type Props = {
   connected: boolean;
   onSend: (text: string) => boolean;
   onError?: (message: string) => void;
+  active: boolean;
+  focusRequest: number;
 };
 
 function nearBottom(element: HTMLElement) {
@@ -33,8 +36,17 @@ function groupConsecutiveMessages(messages: ChatMessageType[]) {
   return groups;
 }
 
-export default function ChatPanel({ messages, clientId, connected, onSend, onError }: Props) {
+export default function ChatPanel({
+  messages,
+  clientId,
+  connected,
+  onSend,
+  onError,
+  active,
+  focusRequest
+}: Props) {
   const listRef = useRef<HTMLUListElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const messageGroups = groupConsecutiveMessages(messages);
@@ -46,12 +58,29 @@ export default function ChatPanel({ messages, clientId, connected, onSend, onErr
     }
 
     if (shouldStickToBottomRef.current) {
-      list.scrollTop = list.scrollHeight;
+      scrollChatToLatest(list);
       setHasNewMessages(false);
     } else {
       setHasNewMessages(messages.length > 0);
     }
   }, [messages]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!active || !list) {
+      return;
+    }
+
+    scrollChatToLatest(list);
+    shouldStickToBottomRef.current = true;
+    setHasNewMessages(false);
+  }, [active]);
+
+  useEffect(() => {
+    if (active && focusRequest > 0 && composerRef.current) {
+      focusChatInput(composerRef.current);
+    }
+  }, [active, focusRequest]);
 
   function onScroll() {
     const list = listRef.current;
@@ -72,7 +101,7 @@ export default function ChatPanel({ messages, clientId, connected, onSend, onErr
       return;
     }
 
-    list.scrollTop = list.scrollHeight;
+    scrollChatToLatest(list);
     shouldStickToBottomRef.current = true;
     setHasNewMessages(false);
   }
@@ -101,7 +130,12 @@ export default function ChatPanel({ messages, clientId, connected, onSend, onErr
         )}
       </div>
 
-      <ChatComposer disabled={!connected} onSend={onSend} onError={onError} />
+      <ChatComposer
+        ref={composerRef}
+        disabled={!connected}
+        onSend={onSend}
+        onError={onError}
+      />
     </section>
   );
 }
