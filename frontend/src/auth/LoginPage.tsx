@@ -1,5 +1,5 @@
 import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import MobilePageHeader from "../mobile/MobilePageHeader";
 import LogoHomeLink from "../components/LogoHomeLink";
@@ -7,6 +7,7 @@ import { userErrorMessage } from "../userError";
 
 type Props = {
   inviteRoomId: string;
+  passwordResetComplete?: boolean;
   onSignIn: (identifier: string, password: string, rememberMe: boolean) => Promise<void>;
   onSignUp: (
     username: string,
@@ -17,7 +18,12 @@ type Props = {
   ) => Promise<void>;
 };
 
-export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
+export default function LoginPage({
+  inviteRoomId,
+  passwordResetComplete = false,
+  onSignIn,
+  onSignUp
+}: Props) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [identifier, setIdentifier] = useState("");
   const [username, setUsername] = useState("");
@@ -28,6 +34,12 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (passwordResetComplete) {
+      window.history.replaceState({}, "", "/");
+    }
+  }, [passwordResetComplete]);
 
   function switchMode(nextMode: "signin" | "signup") {
     setMode(nextMode);
@@ -168,6 +180,12 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
           </span>
         </label>
 
+        {mode === "signin" && (
+          <a className="authTextLink authForgotLink" href="/forgot-password">
+            Forgot password?
+          </a>
+        )}
+
         {mode === "signup" && (
           <label className="fieldLabel">
             Confirm password
@@ -193,6 +211,12 @@ export default function LoginPage({ inviteRoomId, onSignIn, onSignUp }: Props) {
           />
           Keep me signed in
         </label>
+
+        {passwordResetComplete && (
+          <div className="authSuccess" role="status">
+            Your password has been reset. Please sign in.
+          </div>
+        )}
 
         {error && <div id="auth-error" className="loginError" role="alert">{error}</div>}
 

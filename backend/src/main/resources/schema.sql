@@ -27,3 +27,15 @@ CREATE TABLE IF NOT EXISTS remember_me_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_remember_me_user
     ON remember_me_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_hash VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT fk_password_reset_user
+        FOREIGN KEY (user_id) REFERENCES syncwatch_users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_user
+    ON password_reset_tokens(user_id);

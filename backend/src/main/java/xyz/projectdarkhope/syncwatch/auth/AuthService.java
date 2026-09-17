@@ -6,7 +6,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
@@ -60,13 +59,7 @@ public class AuthService {
         if (email.length() > 254 || !EMAIL_PATTERN.matcher(email).matches()) {
             throw validation("Enter a valid email address");
         }
-        int passwordLength = password.codePointCount(0, password.length());
-        if (passwordLength < 8 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw validation("Password must be at least 8 characters and no more than 72 UTF-8 bytes");
-        }
-        if (!password.equals(confirmation)) {
-            throw validation("Passwords do not match");
-        }
+        PasswordPolicy.validate(password, confirmation);
         if (users.usernameExists(username)) {
             throw conflict("Username is already taken");
         }
@@ -100,7 +93,7 @@ public class AuthService {
         String password = request == null || request.password() == null ? "" : request.password();
         Optional<UserAccount> user = identifier.length() > 254
                 ? Optional.empty() : users.findByUsernameOrEmail(identifier);
-        boolean validLength = password.getBytes(StandardCharsets.UTF_8).length <= 72;
+        boolean validLength = PasswordPolicy.withinBcryptLimit(password);
         boolean passwordMatches = passwordEncoder.matches(validLength ? password : "",
                 user.map(UserAccount::passwordHash).orElse(dummyPasswordHash));
         if (identifier.isBlank() || password.isBlank() || !validLength

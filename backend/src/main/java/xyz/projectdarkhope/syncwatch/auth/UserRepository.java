@@ -62,6 +62,29 @@ public class UserRepository {
         ).stream().findFirst();
     }
 
+    public Optional<UserAccount> findByEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return Optional.empty();
+        }
+        return jdbc.query(
+                """
+                SELECT id, username, email, password_hash, created_at
+                FROM syncwatch_users
+                WHERE email_normalized = ?
+                """,
+                this::mapUser,
+                normalize(email)
+        ).stream().findFirst();
+    }
+
+    public boolean updatePasswordHash(String userId, String passwordHash) {
+        return jdbc.update(
+                "UPDATE syncwatch_users SET password_hash = ? WHERE id = ?",
+                passwordHash,
+                userId
+        ) == 1;
+    }
+
     public boolean usernameExists(String username) {
         return count("username_normalized", normalize(username)) > 0;
     }

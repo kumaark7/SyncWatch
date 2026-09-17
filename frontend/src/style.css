@@ -3463,6 +3463,30 @@ button.chatToastOpen:hover:not(:disabled) {
   accent-color: var(--accent);
 }
 .loginError { color: #fecaca; font-size: 14px; }
+.authSuccess {
+  padding: 12px;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(22, 101, 52, 0.18);
+  color: #bbf7d0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.authTextLink {
+  width: fit-content;
+  color: #a9c1ff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.authTextLink:hover { color: #d8e3ff; text-decoration: underline; }
+.authTextLink:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.authForgotLink { justify-self: end; margin-top: -8px; }
+.authRecoveryCard { align-content: start; }
 .guestJoinCard { gap: 18px; }
 .guestRoomIdInput {
   text-transform: uppercase;

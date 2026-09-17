@@ -47,6 +47,10 @@ public class RememberMeTokenRepository {
         jdbc.update("DELETE FROM remember_me_tokens WHERE token_hash = ?", tokenHash);
     }
 
+    public void deleteByUserId(String userId) {
+        jdbc.update("DELETE FROM remember_me_tokens WHERE user_id = ?", userId);
+    }
+
     public boolean consume(String tokenHash, Instant now) {
         return jdbc.update("DELETE FROM remember_me_tokens WHERE token_hash = ? AND expires_at > ?",
                 tokenHash, now) == 1;

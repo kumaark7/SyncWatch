@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import ForgotPasswordPage from "./auth/ForgotPasswordPage";
 import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
+import ResetPasswordPage from "./auth/ResetPasswordPage";
 import ConnectionStatus from "./components/ConnectionStatus";
 import OfflineNotice from "./components/OfflineNotice";
 import LogoHomeLink from "./components/LogoHomeLink";
@@ -119,6 +121,9 @@ function AppContent() {
   const auth = useAuth();
   const inviteRoomId = roomFromUrl();
   const [homeJoinCode, setHomeJoinCode] = useState("");
+  const authPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  const passwordResetComplete = new URLSearchParams(window.location.search)
+    .get("passwordReset") === "success";
 
   async function authenticate(action: () => Promise<void>) {
     const pendingRoomId = inviteRoomId;
@@ -132,6 +137,14 @@ function AppContent() {
       }
       throw cause;
     }
+  }
+
+  if (authPath === "/forgot-password") {
+    return <ForgotPasswordPage />;
+  }
+
+  if (authPath === "/reset-password") {
+    return <ResetPasswordPage />;
   }
 
   if (auth.loading) {
@@ -155,6 +168,7 @@ function AppContent() {
     return (
       <LoginPage
         inviteRoomId={inviteRoomId}
+        passwordResetComplete={passwordResetComplete}
         onSignIn={(identifier, password, rememberMe) => authenticate(
           () => auth.signIn(identifier, password, rememberMe)
         )}

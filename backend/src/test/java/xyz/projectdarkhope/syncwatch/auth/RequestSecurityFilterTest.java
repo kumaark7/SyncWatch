@@ -13,7 +13,8 @@ class RequestSecurityFilterTest {
     @Test
     void mutationsRequireTrustedOriginAndCustomHeaderIncludingLoginAndLogout() throws Exception {
         for (String path : new String[]{"/api/auth/login", "/api/auth/signup", "/api/auth/guest",
-                "/api/auth/logout", "/api/google/code", "/api/google/connection", "/api/rooms"}) {
+                "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
+                "/api/google/code", "/api/google/connection", "/api/rooms"}) {
             for (String method : new String[]{"POST", "PUT", "DELETE"}) {
                 assertThat(request(method, path, "https://evil.example", true)).isEqualTo(403);
                 assertThat(request(method, path, "null", true)).isEqualTo(403);

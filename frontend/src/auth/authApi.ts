@@ -51,6 +51,42 @@ async function authError(response: Response, fallback: string) {
   return new Error(body?.error || fallback);
 }
 
+export async function requestPasswordReset(email: string) {
+  const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email })
+  });
+
+  if (!response.ok) {
+    throw await authError(response, "Could not request a password reset");
+  }
+  return response.json() as Promise<{ message: string }>;
+}
+
+export async function resetPassword(
+  token: string,
+  password: string,
+  confirmPassword: string
+) {
+  const response = await fetch(`${API_URL}/api/auth/reset-password`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ token, password, confirmPassword })
+  });
+
+  if (!response.ok) {
+    throw await authError(response, "The reset link is invalid or has expired.");
+  }
+  return response.json() as Promise<{ message: string }>;
+}
+
 export async function login(
   identifier: string,
   password: string,

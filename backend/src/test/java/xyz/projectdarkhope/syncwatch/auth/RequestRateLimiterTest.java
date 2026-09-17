@@ -65,6 +65,25 @@ class RequestRateLimiterTest {
     }
 
     @Test
+    void passwordResetEndpointsHaveIndependentPerIpBudgets() throws Exception {
+        RequestRateLimitFilter filter = new RequestRateLimitFilter(new RequestRateLimiter());
+        for (int request = 0; request < 11; request++) {
+            MockHttpServletRequest forgot = new MockHttpServletRequest("POST", "/api/auth/forgot-password");
+            forgot.setRemoteAddr("192.0.2.10");
+            MockHttpServletResponse response = run(filter, forgot);
+            assertThat(response.getStatus()).isEqualTo(request < 10 ? 204 : 202);
+            if (request == 10) {
+                assertThat(response.getContentAsString()).contains(PasswordResetService.FORGOT_RESPONSE);
+            }
+        }
+        for (int request = 0; request < 21; request++) {
+            MockHttpServletRequest reset = new MockHttpServletRequest("POST", "/api/auth/reset-password");
+            reset.setRemoteAddr("192.0.2.10");
+            assertThat(run(filter, reset).getStatus()).isEqualTo(request < 20 ? 204 : 429);
+        }
+    }
+
+    @Test
     void rangesAreNeverThrottledAndGuestCannotResetBudgetByChangingClientId() throws Exception {
         RequestRateLimitFilter filter = new RequestRateLimitFilter(new RequestRateLimiter());
         for (int i = 0; i < 700; i++) {

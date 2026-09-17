@@ -29,6 +29,14 @@ public class RequestRateLimitFilter extends OncePerRequestFilter {
             String owner = policy.byAddress ? "ip:" + request.getRemoteAddr() : owner(request);
             if (!limiter.allow(policy.name + ":" + owner, policy.limit,
                     Duration.ofSeconds(policy.seconds))) {
+                if ("forgot-password".equals(policy.name)) {
+                    response.setStatus(HttpServletResponse.SC_ACCEPTED);
+                    response.setContentType("application/json");
+                    response.getWriter().write(
+                            "{\"message\":\"" + PasswordResetService.FORGOT_RESPONSE + "\"}"
+                    );
+                    return;
+                }
                 response.setStatus(429);
                 response.setHeader("Retry-After", Long.toString(policy.seconds));
                 response.setContentType("application/json");
@@ -53,6 +61,12 @@ public class RequestRateLimitFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
         if (method.equals("OPTIONS") || path.startsWith("/api/stream/")) return null;
+        if (path.equals("/api/auth/forgot-password")) {
+            return new Policy("forgot-password", 10, 900, true);
+        }
+        if (path.equals("/api/auth/reset-password")) {
+            return new Policy("reset-password", 20, 900, true);
+        }
         if (path.equals("/api/auth/login")) return new Policy("login", 30, 300, true);
         if (path.equals("/api/auth/signup")) return new Policy("signup", 10, 3600, true);
         if (path.startsWith("/api/auth/guest")) return new Policy("guest", 60, 300, true);
