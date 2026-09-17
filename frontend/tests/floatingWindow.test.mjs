@@ -35,6 +35,7 @@ function harness(width = 1280) {
   }});
   const target = {
     captured: false,
+    getBoundingClientRect() { return { width: 126, height: 40 }; },
     setPointerCapture() { this.captured = true; },
     hasPointerCapture() { return this.captured; },
     releasePointerCapture() { this.captured = false; }
@@ -91,6 +92,33 @@ test("touch users can resize from the bottom edge and cancellation releases capt
   const height = h.render().style.height;
   h.move(0, 80);
   assert.equal(h.render().style.height, height);
+});
+
+test("the minimized call pill drags across its full viewport and suppresses restore after movement", () => {
+  const h = harness();
+  const before = h.render();
+  before.startMinimizedDrag(h.event);
+  h.move(500, 1000);
+  h.end();
+
+  const after = h.render();
+  assert.equal(after.style.transform, "translate3d(1146px, 752px, 0)");
+  assert.equal(after.consumeSuppressedClick(), true);
+  assert.equal(after.consumeSuppressedClick(), false);
+  assert.equal(h.target.captured, false);
+});
+
+test("the minimized call pill is translucent until hover, focus, or drag", () => {
+  const css = readFileSync(new URL("../src/style.css", import.meta.url), "utf8");
+  const component = readFileSync(
+    new URL("../src/party/call/FloatingCallWindow.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(css, /\.floatingCallMinimized[\s\S]*?opacity:\s*0\.4/);
+  assert.match(css, /\.floatingCallMinimized:hover,[\s\S]*?\.floatingCallMinimized\.isDragging[\s\S]*?opacity:\s*1/);
+  assert.match(component, /onPointerDown=\{floating\.startMinimizedDrag\}/);
+  assert.match(component, /consumeSuppressedClick\(\)/);
 });
 
 test("microphone and camera precede secondary controls in rendered and keyboard order", () => {

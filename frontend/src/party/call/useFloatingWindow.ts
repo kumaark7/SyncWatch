@@ -13,6 +13,13 @@ const DEFAULT_HEIGHT = 240;
 const MOBILE_BREAKPOINT = 640;
 const MIN_WIDTH = 180;
 const MIN_HEIGHT = 110;
+const MINIMIZED_WIDTH = 126;
+const MINIMIZED_HEIGHT = 40;
+
+type FrameBounds = {
+  width: number;
+  height: number;
+};
 
 type WindowFrame = {
   x: number;
@@ -29,7 +36,20 @@ type PointerOperation = {
   startX: number;
   startY: number;
   frame: WindowFrame;
+  bounds: FrameBounds;
+  moved: boolean;
+  suppressClick: boolean;
 };
+
+function clampPosition(x: number, y: number, bounds: FrameBounds) {
+  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - bounds.width - VIEWPORT_MARGIN);
+  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - bounds.height - VIEWPORT_MARGIN);
+
+  return {
+    x: Math.min(Math.max(x, VIEWPORT_MARGIN), maxX),
+    y: Math.min(Math.max(y, VIEWPORT_MARGIN), maxY)
+  };
+}
 
 function resizeFrame(
   frame: WindowFrame,
@@ -63,12 +83,10 @@ function clampFrame(frame: WindowFrame): WindowFrame {
   const { minWidth, minHeight, maxWidth, maxHeight } = limits();
   const width = Math.min(Math.max(frame.width, minWidth), maxWidth);
   const height = Math.min(Math.max(frame.height, minHeight), maxHeight);
-  const maxX = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN);
-  const maxY = Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN);
+  const position = clampPosition(frame.x, frame.y, { width, height });
 
   return {
-    x: Math.min(Math.max(frame.x, VIEWPORT_MARGIN), maxX),
-    y: Math.min(Math.max(frame.y, VIEWPORT_MARGIN), maxY),
+    ...position,
     width,
     height
   };
@@ -87,26 +105,38 @@ function initialFrame(): WindowFrame {
   });
 }
 
-export default function useFloatingWindow() {
+export default function useFloatingWindow(minimized = false) {
   const [frame, setFrame] = useState<WindowFrame>(initialFrame);
   const [mobile, setMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
+  const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
   const operationRef = useRef<PointerOperation | null>(null);
+  const suppressNextClickRef = useRef(false);
 
   useEffect(() => {
     const handleViewportResize = () => {
       setMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-      setFrame((current) => clampFrame(current));
+      setFrame((current) => minimized
+        ? {
+            ...current,
+            ...clampPosition(current.x, current.y, {
+              width: MINIMIZED_WIDTH,
+              height: MINIMIZED_HEIGHT
+            })
+          }
+        : clampFrame(current));
     };
 
     window.addEventListener("resize", handleViewportResize);
     return () => window.removeEventListener("resize", handleViewportResize);
-  }, []);
+  }, [minimized]);
 
   const startOperation = useCallback((
     event: ReactPointerEvent<HTMLElement>,
     mode: PointerOperation["mode"],
-    resizeEdge?: PointerOperation["resizeEdge"]
+    resizeEdge?: PointerOperation["resizeEdge"],
+    bounds: FrameBounds = { width: frame.width, height: frame.height },
+    suppressClick = false
   ) => {
     if (event.pointerType === "mouse" && event.button !== 0) {
       return;
@@ -119,8 +149,12 @@ export default function useFloatingWindow() {
       captureTarget: event.currentTarget,
       startX: event.clientX,
       startY: event.clientY,
-      frame
+      frame,
+      bounds,
+      moved: false,
+      suppressClick
     };
+    setDragging(mode === "drag");
     setResizing(mode === "resize");
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -135,12 +169,18 @@ export default function useFloatingWindow() {
 
     const deltaX = clientX - operation.startX;
     const deltaY = clientY - operation.startY;
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      operation.moved = true;
+    }
     setFrame(operation.mode === "drag"
-      ? clampFrame({
+      ? {
           ...operation.frame,
-          x: operation.frame.x + deltaX,
-          y: operation.frame.y + deltaY
-        })
+          ...clampPosition(
+            operation.frame.x + deltaX,
+            operation.frame.y + deltaY,
+            operation.bounds
+          )
+        }
       : resizeFrame(
           operation.frame,
           operation.resizeEdge === "bottom-left" ? -deltaX : deltaX,
@@ -157,6 +197,8 @@ export default function useFloatingWindow() {
     }
 
     operationRef.current = null;
+    suppressNextClickRef.current = operation.suppressClick && operation.moved;
+    setDragging(false);
     setResizing(false);
     if (operation.captureTarget.hasPointerCapture(pointerId)) {
       operation.captureTarget.releasePointerCapture(pointerId);
@@ -189,6 +231,17 @@ export default function useFloatingWindow() {
     }));
   }, []);
 
+  const moveMinimizedBy = useCallback((
+    deltaX: number,
+    deltaY: number,
+    bounds: FrameBounds = { width: MINIMIZED_WIDTH, height: MINIMIZED_HEIGHT }
+  ) => {
+    setFrame((current) => ({
+      ...current,
+      ...clampPosition(current.x + deltaX, current.y + deltaY, bounds)
+    }));
+  }, []);
+
   const resizeBy = useCallback((deltaWidth: number, deltaHeight: number) => {
     setFrame((current) => resizeFrame(
       current,
@@ -204,17 +257,40 @@ export default function useFloatingWindow() {
     transform: `translate3d(${frame.x}px, ${frame.y}px, 0)`
   };
 
+  const minimizedStyle: CSSProperties = {
+    transform: style.transform
+  };
+
   return {
     mobile,
+    dragging,
     resizing,
     style,
+    minimizedStyle,
     startDrag: (event: ReactPointerEvent<HTMLElement>) => startOperation(event, "drag"),
+    startMinimizedDrag: (event: ReactPointerEvent<HTMLElement>) => {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      startOperation(
+        event,
+        "drag",
+        undefined,
+        { width: bounds.width, height: bounds.height },
+        true
+      );
+    },
     startResize: (
       event: ReactPointerEvent<HTMLElement>,
       edge: "bottom-left" | "bottom-right" | "bottom" = "bottom-right"
     ) => startOperation(event, "resize", edge),
     cancelOperation: (event: ReactPointerEvent<HTMLElement>) => finishOperation(event.pointerId),
+    consumeSuppressedClick: () => {
+      const suppressed = suppressNextClickRef.current;
+      suppressNextClickRef.current = false;
+      return suppressed;
+    },
+    fitToViewport: () => setFrame((current) => clampFrame(current)),
     moveBy,
+    moveMinimizedBy,
     resizeBy
   };
 }

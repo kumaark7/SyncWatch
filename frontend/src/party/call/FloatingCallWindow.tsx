@@ -26,7 +26,7 @@ export default function FloatingCallWindow({
     toggleRemoteAudio
   } = useCall();
   const [minimized, setMinimized] = useState(false);
-  const floating = useFloatingWindow();
+  const floating = useFloatingWindow(minimized);
   const visibleParticipants = selfViewHidden
     ? participants.filter((participant) => !participant.isLocal)
     : participants;
@@ -74,11 +74,38 @@ export default function FloatingCallWindow({
   if (minimized) {
     return (
       <button
-        className="floatingCallMinimized"
-        style={{ transform: floating.style.transform }}
+        className={`floatingCallMinimized ${floating.dragging ? "isDragging" : ""}`}
+        style={floating.minimizedStyle}
         aria-label="Restore call"
-        title="Restore call"
-        onClick={() => setMinimized(false)}
+        title="Drag to move. Click to restore call."
+        onPointerDown={floating.startMinimizedDrag}
+        onLostPointerCapture={floating.cancelOperation}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) {
+            return;
+          }
+          const step = keyboardStep(event);
+          const movement = event.key === "ArrowLeft" ? [-step, 0]
+            : event.key === "ArrowRight" ? [step, 0]
+              : event.key === "ArrowUp" ? [0, -step]
+                : event.key === "ArrowDown" ? [0, step]
+                  : null;
+          if (movement) {
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            floating.moveMinimizedBy(movement[0], movement[1], {
+              width: bounds.width,
+              height: bounds.height
+            });
+          }
+        }}
+        onClick={() => {
+          if (floating.consumeSuppressedClick()) {
+            return;
+          }
+          floating.fitToViewport();
+          setMinimized(false);
+        }}
       >
         <span className={`floatingCallStatusDot ${status}`} aria-hidden="true" />
         <span>Call</span>
