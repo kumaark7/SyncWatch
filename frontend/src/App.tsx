@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import ForgotPasswordPage from "./auth/ForgotPasswordPage";
 import GuestJoinPage from "./auth/GuestJoinPage";
 import LoginPage from "./auth/LoginPage";
+import ProfilePage from "./auth/ProfilePage";
 import ResetPasswordPage from "./auth/ResetPasswordPage";
 import ConnectionStatus from "./components/ConnectionStatus";
 import OfflineNotice from "./components/OfflineNotice";
@@ -15,6 +16,11 @@ import TheaterToggle from "./components/TheaterToggle";
 import Toast from "./components/Toast";
 import DrivePicker from "./DrivePicker";
 import { generateDisplayName, generateRoomName } from "./generatedNames";
+import {
+  googleDriveApisReady,
+  requestGoogleDriveAuthorizationCode,
+  type GoogleDriveConnection
+} from "./googleDriveConnection";
 import MobileBottomNav, { type MobileTab } from "./mobile/MobileBottomNav";
 import MobileRoomHeader from "./mobile/MobileRoomHeader";
 import {
@@ -50,18 +56,9 @@ import type { Participant, RoomState, SyncEvent } from "./types";
 import { userErrorMessage } from "./userError";
 import "./style.css";
 
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const DRIVE_SCOPE =
-  "https://www.googleapis.com/auth/drive.file";
-
 const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
 const SESSION_REVALIDATION_INTERVAL_MS = 5 * 60 * 1000;
 const MOBILE_ROOM_MEDIA_QUERY = "(max-width: 768px)";
-
-type GoogleConnection = {
-  accessToken: string;
-  expiresAt: number;
-};
 
 function roomFromUrl() {
   const pathMatch =
@@ -78,11 +75,9 @@ function roomFromUrl() {
     ?.toUpperCase() || "";
 }
 
-function googleApisReady() {
-  return Boolean(
-    window.google?.accounts?.oauth2 &&
-      window.gapi
-  );
+function clearStoredRoomIdentity() {
+  sessionStorage.removeItem(NAME_TAG_STORAGE_KEY);
+  sessionStorage.removeItem(ROOM_CLIENT_ID_STORAGE_KEY);
 }
 
 function snapshotAsSyncEvent(snapshot: RoomState): SyncEvent {
@@ -115,6 +110,18 @@ function useMobileRoomLayout() {
   }, []);
 
   return mobile;
+}
+
+function GuestProfileRedirect({ roomId }: { roomId: string | null }) {
+  useEffect(() => {
+    window.location.replace(roomId ? `/room/${encodeURIComponent(roomId)}` : "/");
+  }, [roomId]);
+
+  return (
+    <main className="loginShell">
+      <div className="loginCard loadingCard">Returning to your room...</div>
+    </main>
+  );
 }
 
 function AppContent() {
@@ -180,6 +187,26 @@ function AppContent() {
   }
 
   const guestSession = auth.session.role === "GUEST";
+
+  if (authPath === "/profile") {
+    if (guestSession) {
+      return <GuestProfileRedirect roomId={auth.session.allowedRoomId} />;
+    }
+    if (auth.session.role !== "USER") {
+      return <GuestProfileRedirect roomId={null} />;
+    }
+
+    return (
+      <ProfilePage
+        onLogout={async () => {
+          await auth.signOut();
+          clearStoredRoomIdentity();
+          window.location.replace("/");
+        }}
+      />
+    );
+  }
+
   const activeRoomId = guestSession
     ? auth.session.allowedRoomId || ""
     : inviteRoomId;
@@ -299,10 +326,10 @@ function AuthenticatedApp({
   const mobileRoomLayout = useMobileRoomLayout();
 
   const [googleConnection, setGoogleConnection] =
-    useState<GoogleConnection | null>(null);
+    useState<GoogleDriveConnection | null>(null);
 
   const [googleReady, setGoogleReady] =
-    useState(googleApisReady());
+    useState(googleDriveApisReady());
 
   const [restoringGoogleConnection, setRestoringGoogleConnection] =
     useState(false);
@@ -574,7 +601,7 @@ function AuthenticatedApp({
     }
 
     const timer = window.setInterval(() => {
-      if (googleApisReady()) {
+      if (googleDriveApisReady()) {
         setGoogleReady(true);
         window.clearInterval(timer);
       }
@@ -954,72 +981,20 @@ function AuthenticatedApp({
     return confirmAuthenticatedSession();
   }
 
-  function requestGoogleAuthorizationCode() {
-    return new Promise<GoogleConnection | null>((resolve) => {
-      if (!CLIENT_ID) {
-        alert("Missing VITE_GOOGLE_CLIENT_ID in frontend/.env");
-        resolve(null);
-        return;
-      }
+  async function requestGoogleAuthorizationCode() {
+    if (!googleReady) return null;
 
-      if (!googleReady || !window.google?.accounts?.oauth2) {
-        resolve(null);
-        return;
-      }
-
-      const codeClient = window.google.accounts.oauth2.initCodeClient({
-        client_id: CLIENT_ID,
-        scope: DRIVE_SCOPE,
-        ux_mode: "popup",
-        select_account: false,
-        callback: async (codeResponse: any) => {
-          if (codeResponse.error || !codeResponse.code) {
-            console.error("Google OAuth code error:", codeResponse.error);
-            alert("Google Drive authorization failed. Please try again.");
-            resolve(null);
-            return;
-          }
-
-          try {
-            if (!await confirmHostSession()) {
-              resolve(null);
-              return;
-            }
-
-            const response = await googleApiFetch("/api/google/code", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Requested-With": "XmlHttpRequest"
-              },
-              body: JSON.stringify({
-                code: codeResponse.code,
-                redirectUri: window.location.origin
-              })
-            });
-            const result = await response.json().catch(() => null);
-            if (!response.ok || !result?.connected || !result.accessToken) {
-              if (response.status !== 401) {
-                alert(result?.error || "Could not save Google Drive authorization.");
-              }
-              resolve(null);
-              return;
-            }
-            resolve({ accessToken: result.accessToken, expiresAt: result.expiresAt });
-          } catch (error) {
-            console.error("Google OAuth exchange error:", error);
-            alert("Could not contact SyncWatch to save Google Drive authorization.");
-            resolve(null);
-          }
-        },
-        error_callback: (error: any) => {
-          console.error("Google OAuth popup error:", error);
-          resolve(null);
-        }
-      });
-
-      codeClient.requestCode();
-    });
+    try {
+      return await requestGoogleDriveAuthorizationCode(
+        authenticatedFetch,
+        confirmHostSession
+      );
+    } catch (error) {
+      alert(error instanceof Error
+        ? error.message
+        : "Could not connect Google Drive. Please try again.");
+      return null;
+    }
   }
 
   function googleApiFetch(path: string, init: RequestInit = {}) {
@@ -1283,8 +1258,7 @@ function AuthenticatedApp({
 
   async function logout() {
     await onLogout();
-    sessionStorage.removeItem(NAME_TAG_STORAGE_KEY);
-    sessionStorage.removeItem(ROOM_CLIENT_ID_STORAGE_KEY);
+    clearStoredRoomIdentity();
     window.history.replaceState({}, "", "/");
     setRoom(null);
     setRoomId("");
@@ -1547,7 +1521,13 @@ function AuthenticatedApp({
               onCloseRoom={() => void closeRoom()}
             />
           )}
-          <span className="userPill">{username}</span>
+          {!roomId && !guestSession ? (
+            <a className="userPill userPillLink" href="/profile" aria-label={`Open ${username}'s profile`}>
+              {username}
+            </a>
+          ) : (
+            <span className="userPill">{username}</span>
+          )}
           {!roomId && (
             <button className="headerLogout" onClick={() => void logout()}>Logout</button>
           )}

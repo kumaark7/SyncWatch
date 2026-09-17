@@ -357,6 +357,22 @@ input, select {
   white-space: nowrap;
 }
 
+.userPillLink {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.userPillLink:hover {
+  border-color: rgba(125, 162, 255, 0.6);
+  background: #18233a;
+  color: #ffffff;
+}
+
+.userPillLink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .topActions .connectionStatus,
 .topActions .userPill {
   border-radius: var(--radius-sm);
@@ -2951,6 +2967,336 @@ input, select {
     min-width: 24px;
     height: 24px;
     min-height: 24px;
+  }
+}
+
+.profileShell {
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+.profileNav {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  min-height: calc(68px + env(safe-area-inset-top, 0px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: rgba(7, 10, 16, 0.97);
+  padding: env(safe-area-inset-top, 0px) max(24px, env(safe-area-inset-right, 0px)) 0 max(24px, env(safe-area-inset-left, 0px));
+}
+
+.profileLogo {
+  width: auto;
+  height: 38px;
+  max-width: 170px;
+  object-fit: contain;
+}
+
+.profileHomeLink,
+.profileButton {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(18, 24, 36, 0.92);
+  color: var(--text);
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.profileHomeLink:hover,
+.profileButton:hover {
+  border-color: #3a4966;
+  background: #1a2334;
+}
+
+.profileHomeLink:focus-visible,
+.profileButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.profileContent {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 42px 24px 64px;
+}
+
+.profileHero {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 28px;
+  padding: 0 4px 28px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.profileAvatar {
+  width: 82px;
+  height: 82px;
+  flex: 0 0 82px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(125, 162, 255, 0.55);
+  border-radius: 50%;
+  background: #18233a;
+  color: #ffffff;
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.profileIdentity {
+  min-width: 0;
+}
+
+.profileEyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.profileIdentity h1 {
+  margin: 5px 0 4px;
+  font-size: 32px;
+  line-height: 1.15;
+}
+
+.profileIdentity p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.profileGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profileSection {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 20px;
+}
+
+.profileSectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: #dbe5f7;
+}
+
+.profileSectionHeading svg {
+  color: var(--accent);
+}
+
+.profileSectionHeading h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.profileDetails {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+
+.profileDetails > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.profileDetails dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.profileDetails dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.profileServiceRow,
+.profileActionRow {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profileServiceInfo,
+.profileActionRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.profileServiceInfo strong,
+.profileActionRow strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.profileActionRow p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.profileServiceStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.profileServiceStatus.connected { color: var(--success); }
+.profileServiceStatus.error { color: #ffd280; }
+.profileServiceStatus.checking { color: #b9c9eb; }
+
+.profileSecondaryButton {
+  flex: 0 0 auto;
+}
+
+.profileInlineError {
+  margin: 14px 0 0;
+  color: #ffd0d4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.profileSessionSection {
+  border-color: rgba(255, 107, 117, 0.24);
+}
+
+.profileLogoutButton {
+  flex: 0 0 auto;
+  border-color: rgba(255, 107, 117, 0.38);
+  background: rgba(88, 25, 33, 0.3);
+  color: #ffabb2;
+}
+
+.profileLogoutButton:hover:not(:disabled) {
+  border-color: rgba(255, 107, 117, 0.62);
+  background: rgba(112, 31, 41, 0.46);
+  color: #ffd0d4;
+}
+
+@media (max-width: 768px) {
+  .profileNav {
+    min-height: calc(58px + env(safe-area-inset-top, 0px));
+    gap: 12px;
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+  }
+
+  .profileLogo {
+    height: 34px;
+    max-width: min(144px, 46vw);
+  }
+
+  .profileHomeLink,
+  .profileButton,
+  .profileSection button {
+    min-height: 44px;
+  }
+
+  .profileContent {
+    padding: 24px 14px calc(36px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .profileHero {
+    gap: 16px;
+    margin-bottom: 16px;
+    padding: 0 2px 20px;
+  }
+
+  .profileAvatar {
+    width: 64px;
+    height: 64px;
+    flex-basis: 64px;
+    font-size: 22px;
+  }
+
+  .profileIdentity h1 {
+    font-size: 25px;
+  }
+
+  .profileGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .profileSection {
+    padding: 16px;
+  }
+
+  .profileSectionHeading {
+    margin-bottom: 15px;
+  }
+
+  .profileServiceRow,
+  .profileActionRow {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .profileServiceRow > button,
+  .profileActionRow > button,
+  .profileActionRow > .profileButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .profileHomeLink {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .profileHero {
+    align-items: flex-start;
+  }
+
+  .profileAvatar {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+    font-size: 19px;
   }
 }
 
