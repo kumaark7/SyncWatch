@@ -3,6 +3,7 @@ import { API_URL } from "./api";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import ForgotPasswordPage from "./auth/ForgotPasswordPage";
 import GuestJoinPage from "./auth/GuestJoinPage";
+import HomeAccountMenu from "./auth/HomeAccountMenu";
 import LoginPage from "./auth/LoginPage";
 import ProfilePage from "./auth/ProfilePage";
 import ResetPasswordPage from "./auth/ResetPasswordPage";
@@ -60,17 +61,24 @@ const NAME_TAG_STORAGE_KEY = "syncwatch-name-tag";
 const SESSION_REVALIDATION_INTERVAL_MS = 5 * 60 * 1000;
 const MOBILE_ROOM_MEDIA_QUERY = "(max-width: 768px)";
 
-function roomFromUrl() {
+export function roomFromUrl(
+  pathname = window.location.pathname,
+  search = window.location.search
+) {
   const pathMatch =
-    window.location.pathname.match(
-      /^\/room\/([A-Z0-9]+)/i
+    pathname.match(
+      /^\/room\/([A-Z0-9]+)\/?$/i
     );
 
   if (pathMatch?.[1]) {
     return pathMatch[1].toUpperCase();
   }
 
-  return new URLSearchParams(window.location.search)
+  if (pathname !== "/") {
+    return "";
+  }
+
+  return new URLSearchParams(search)
     .get("room")
     ?.toUpperCase() || "";
 }
@@ -216,6 +224,7 @@ function AppContent() {
       username={guestSession
         ? auth.session.displayName || "Guest"
         : auth.session.username || "User"}
+      email={guestSession ? null : auth.session.email}
       initialRoomId={activeRoomId}
       initialJoinCode={guestSession ? activeRoomId : homeJoinCode || inviteRoomId}
       initialDisplayName={guestSession ? auth.session.displayName : null}
@@ -234,6 +243,7 @@ function AppContent() {
 
 function AuthenticatedApp({
   username,
+  email,
   initialRoomId,
   initialJoinCode,
   initialDisplayName,
@@ -245,6 +255,7 @@ function AuthenticatedApp({
   confirmAuthenticatedSession
 }: {
   username: string;
+  email: string | null;
   initialRoomId: string;
   initialJoinCode: string;
   initialDisplayName: string | null;
@@ -1522,13 +1533,15 @@ function AuthenticatedApp({
             />
           )}
           {!roomId && !guestSession ? (
-            <a className="userPill userPillLink" href="/profile" aria-label={`Open ${username}'s profile`}>
-              {username}
-            </a>
+            <HomeAccountMenu
+              username={username}
+              email={email}
+              onLogout={logout}
+            />
           ) : (
             <span className="userPill">{username}</span>
           )}
-          {!roomId && (
+          {!roomId && guestSession && (
             <button className="headerLogout" onClick={() => void logout()}>Logout</button>
           )}
         </div>

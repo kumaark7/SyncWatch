@@ -3602,6 +3602,209 @@ input, select {
   }
 }
 
+.topActions > .homeAccountMenu {
+  position: relative;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  padding: 0;
+}
+
+.homeAccountTrigger {
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  gap: 8px;
+  padding: 0 11px 0 7px;
+  border-color: rgba(125, 162, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(18, 24, 36, 0.96);
+}
+
+.homeAccountTrigger:hover:not(:disabled),
+.homeAccountTrigger[aria-expanded="true"] {
+  border-color: rgba(125, 162, 255, 0.68);
+  background: #18233a;
+}
+
+.homeAccountAvatar,
+.homeAccountIdentityAvatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(125, 162, 255, 0.52);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #263a67, #41266c);
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.homeAccountAvatar {
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.homeAccountName {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.homeAccountChevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.homeAccountTrigger[aria-expanded="true"] .homeAccountChevron {
+  transform: rotate(180deg);
+}
+
+.homeAccountDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 320;
+  width: min(286px, calc(100vw - 28px));
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #0b111c;
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.56);
+  animation: homeAccountMenuIn 120ms ease-out;
+}
+
+.homeAccountIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 9px 10px;
+}
+
+.homeAccountIdentityAvatar {
+  width: 38px;
+  height: 38px;
+  font-size: 13px;
+}
+
+.homeAccountIdentityText {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.homeAccountIdentityText strong,
+.homeAccountIdentityText span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.homeAccountIdentityText strong {
+  font-size: 14px;
+}
+
+.homeAccountIdentityText span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.homeAccountSeparator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border-soft);
+}
+
+.homeAccountAction {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #dce5f5;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.homeAccountAction:hover,
+.homeAccountAction:focus-visible {
+  background: #18233a;
+  color: #ffffff;
+}
+
+.homeAccountAction:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.homeAccountLogout {
+  color: #ffabb2;
+}
+
+.homeAccountLogout:hover:not(:disabled),
+.homeAccountLogout:focus-visible {
+  background: rgba(112, 31, 41, 0.42);
+  color: #ffd0d4;
+}
+
+@keyframes homeAccountMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 430px) {
+  .homeShell .topActions > .homeAccountMenu {
+    min-width: 44px;
+    min-height: 44px;
+    height: auto;
+    padding: 0;
+  }
+
+  .homeAccountTrigger {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+
+  .homeAccountName,
+  .homeAccountChevron {
+    display: none;
+  }
+
+  .homeAccountDropdown {
+    right: -2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .homeAccountDropdown,
+  .homeAccountChevron {
+    transition: none;
+    animation: none;
+  }
+}
+
 /* Chat message notifications */
 .chatToastStack {
   position: fixed;

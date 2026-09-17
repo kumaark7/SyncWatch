@@ -11,6 +11,10 @@ const profileSource = readFileSync(
   new URL("../src/auth/ProfilePage.tsx", import.meta.url),
   "utf8"
 );
+const accountMenuSource = readFileSync(
+  new URL("../src/auth/HomeAccountMenu.tsx", import.meta.url),
+  "utf8"
+);
 const driveSource = readFileSync(
   new URL("../src/googleDriveConnection.ts", import.meta.url),
   "utf8"
@@ -33,6 +37,23 @@ function loadPresentation() {
   const exports = {};
   runInNewContext(transpile("../src/auth/profilePresentation.ts"), { exports });
   return exports;
+}
+
+function loadRoomFromUrl() {
+  const normalizedAppSource = appSource.replace(/\r\n/g, "\n");
+  const start = normalizedAppSource.indexOf("export function roomFromUrl(");
+  const endMarker = "\n}\n\nfunction clearStoredRoomIdentity";
+  const end = normalizedAppSource.indexOf(endMarker, start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+
+  const exports = {};
+  const source = normalizedAppSource.slice(start, end + 2);
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS }
+  }).outputText;
+  runInNewContext(compiled, { exports, URLSearchParams });
+  return exports.roomFromUrl;
 }
 
 function loadDriveClient({ response, windowOverrides = {} }) {
@@ -121,6 +142,26 @@ test("profile route renders registered users, preserves login for anonymous user
   assert.match(appSource, /if \(!auth\.session\.authenticated\)[\s\S]*?<LoginPage/);
   assert.match(appSource, /guestSession[\s\S]*?<GuestProfileRedirect roomId=\{auth\.session\.allowedRoomId\}/);
   assert.match(appSource, /window\.location\.replace\(roomId \? `\/room\/\$\{encodeURIComponent\(roomId\)\}` : "\/"\)/);
+});
+
+test("room paths require the exact intended route shape", () => {
+  const roomFromUrl = loadRoomFromUrl();
+  assert.equal(roomFromUrl("/room/U2WKX6", ""), "U2WKX6");
+  assert.equal(roomFromUrl("/room/U2WKX6/", ""), "U2WKX6");
+  assert.equal(roomFromUrl("/room/U2WKX6/profile", ""), "");
+  assert.equal(roomFromUrl("/room/U2WKX6/anything", ""), "");
+  assert.equal(roomFromUrl("/room/U2WKX6/profile", "?room=OTHER1"), "");
+  assert.equal(roomFromUrl("/profile", "?room=U2WKX6"), "");
+  assert.equal(roomFromUrl("/", "?room=U2WKX6"), "U2WKX6");
+});
+
+test("all Profile navigation is absolute and cannot append to a room URL", () => {
+  const navigationSources = `${appSource}\n${profileSource}\n${accountMenuSource}`;
+  const profileNavigations = [...navigationSources.matchAll(/(?:href|pushState|replaceState)[^\n]*profile/gi)]
+    .map(match => match[0]);
+  assert.ok(profileNavigations.length > 0);
+  assert.ok(profileNavigations.every(navigation => navigation.includes("/profile")));
+  assert.doesNotMatch(navigationSources, /href="profile"|(?:pushState|replaceState)\([^\n]*["']profile["']/);
 });
 
 test("registered profile renders session identity, semantic sections, and a checking state", () => {
@@ -213,7 +254,7 @@ test("profile connect reuses the shared OAuth code exchange and disconnect uses 
   assert.equal(client.calls[1].options.method, "DELETE");
 });
 
-test("profile reuses reset and logout flows and is linked only from the home account pill", () => {
+test("profile reuses reset and logout flows and is linked only from the home account menu", () => {
   const roomMenu = readFileSync(
     new URL("../src/components/RoomActionsMenu.tsx", import.meta.url),
     "utf8"
@@ -226,7 +267,44 @@ test("profile reuses reset and logout flows and is linked only from the home acc
   assert.match(profileSource, /href="\/forgot-password"/);
   assert.match(profileSource, /await onLogout\(\)/);
   assert.match(appSource, /await auth\.signOut\(\)[\s\S]*?window\.location\.replace\("\/"\)/);
-  assert.match(appSource, /!roomId && !guestSession[\s\S]*?href="\/profile"/);
+  assert.match(appSource, /!roomId && !guestSession[\s\S]*?<HomeAccountMenu/);
+  assert.match(accountMenuSource, /href="\/profile"/);
   assert.doesNotMatch(roomMenu, /\/profile|Profile/);
   assert.doesNotMatch(mobileMenu, /\/profile|Profile/);
+});
+
+test("registered home account menu reuses identity and absolute account routes", () => {
+  assert.match(appSource, /email=\{guestSession \? null : auth\.session\.email\}/);
+  assert.match(appSource, /<HomeAccountMenu[\s\S]*?username=\{username\}[\s\S]*?email=\{email\}[\s\S]*?onLogout=\{logout\}/);
+  assert.match(accountMenuSource, /profileInitials\(username, email\)/);
+  assert.match(accountMenuSource, /href="\/profile"/);
+  assert.match(accountMenuSource, /href="\/forgot-password"/);
+  assert.doesNotMatch(accountMenuSource, /href="profile"|href="forgot-password"/);
+});
+
+test("home account menu is accessible by pointer and keyboard", () => {
+  assert.match(accountMenuSource, /aria-haspopup="menu"/);
+  assert.match(accountMenuSource, /aria-expanded=\{open\}/);
+  assert.match(accountMenuSource, /role="menu"/);
+  assert.match(accountMenuSource, /role="menuitem"/);
+  assert.match(accountMenuSource, /event\.key === "Escape"/);
+  assert.match(accountMenuSource, /"ArrowDown"/);
+  assert.match(accountMenuSource, /"ArrowUp"/);
+  assert.match(accountMenuSource, /document\.addEventListener\("pointerdown", closeOnOutsidePointer\)/);
+  assert.match(accountMenuSource, /event\.relatedTarget/);
+  assert.match(accountMenuSource, /item\?\.focus\(\)/);
+});
+
+test("home account logout reuses application cleanup and returns to the absolute home route", () => {
+  assert.match(accountMenuSource, /await onLogout\(\)/);
+  assert.match(appSource, /onLogout=\{logout\}/);
+  assert.match(appSource, /async function logout\(\)[\s\S]*?await onLogout\(\)[\s\S]*?clearStoredRoomIdentity\(\)[\s\S]*?replaceState\(\{\}, "", "\/"\)/);
+});
+
+test("registered account menu remains home-only and nested room profile paths stay invalid", () => {
+  const roomFromUrl = loadRoomFromUrl();
+  assert.match(appSource, /!roomId && !guestSession \? \([\s\S]*?<HomeAccountMenu/);
+  assert.equal(roomFromUrl("/room/U2WKX6", ""), "U2WKX6");
+  assert.equal(roomFromUrl("/room/U2WKX6/profile", ""), "");
+  assert.doesNotMatch(accountMenuSource, /\/room\/|roomId/);
 });
