@@ -49,7 +49,7 @@ export type VideoPlayerHandle = {
   togglePlayback: () => void;
   pausePlayback: () => void;
   seekBy: (offsetSeconds: number) => void;
-  changeVolumeBy: (offset: number) => void;
+  changeVolumeBy: (offset: number) => number | null;
 };
 
 const IGNORE_DRIFT = 0.25;
@@ -408,13 +408,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
       const video = videoRef.current;
 
       if (!video) {
-        return;
+        return null;
       }
 
       video.volume = Math.min(
         1,
         Math.max(0, Math.round((video.volume + offset) * 100) / 100)
       );
+
+      return video.volume;
     }
   }));
 

@@ -4283,9 +4283,82 @@ button.chatToastOpen:hover:not(:disabled) {
   .callTile,
   .callTileCaption,
   .callControlsWrap,
-  .chatToast {
+  .chatToast,
+  .volumeShortcutHud,
+  .volumeShortcutFill {
     transition: none;
     animation: none;
+  }
+}
+
+.volumeShortcutHud {
+  position: fixed;
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  z-index: 1100;
+  width: min(320px, calc(100vw - 32px));
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(125, 162, 255, 0.42);
+  border-radius: var(--radius-sm);
+  background: rgba(10, 15, 24, 0.96);
+  color: var(--text);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: volumeShortcutHudIn 160ms ease-out;
+}
+
+.volumeShortcutHud > svg {
+  color: var(--accent);
+}
+
+.volumeShortcutTrack {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(154, 165, 184, 0.24);
+}
+
+.volumeShortcutFill {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 140ms ease-out;
+}
+
+.volumeShortcutValue {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+@keyframes volumeShortcutHudIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@media (max-width: 768px) {
+  .volumeShortcutHud {
+    bottom: calc(
+      var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + 12px
+    );
   }
 }
 

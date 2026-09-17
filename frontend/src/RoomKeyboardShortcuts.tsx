@@ -1,9 +1,17 @@
 import { useLocalParticipant } from "@livekit/components-react";
-import { X } from "lucide-react";
-import { useEffect, useState, type RefObject } from "react";
+import { Volume2, VolumeX, X } from "lucide-react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject
+} from "react";
 import { useCall } from "./party/call/CallProvider";
 import { usePushToTalk } from "./party/call/PushToTalkProvider";
 import type { VideoPlayerHandle } from "./VideoPlayer";
+import { volumePercentage } from "./volumeFeedback";
 
 type Props = {
   playerRef: RefObject<VideoPlayerHandle | null>;
@@ -24,6 +32,8 @@ const SHORTCUTS = [
   ["?", "Show or hide this help"]
 ] as const;
 
+const VOLUME_FEEDBACK_DURATION_MS = 1400;
+
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -41,9 +51,30 @@ export default function RoomKeyboardShortcuts({
   onError
 }: Props) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const [volumeLevel, setVolumeLevel] = useState<number | null>(null);
+  const volumeFeedbackTimerRef = useRef<number | null>(null);
   const { isCameraEnabled } = useLocalParticipant();
   const { status, setCameraEnabled } = useCall();
   const { toggleMicrophone } = usePushToTalk();
+
+  const showVolumeFeedback = useCallback((volume: number) => {
+    setVolumeLevel(volume);
+
+    if (volumeFeedbackTimerRef.current !== null) {
+      window.clearTimeout(volumeFeedbackTimerRef.current);
+    }
+
+    volumeFeedbackTimerRef.current = window.setTimeout(() => {
+      setVolumeLevel(null);
+      volumeFeedbackTimerRef.current = null;
+    }, VOLUME_FEEDBACK_DURATION_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (volumeFeedbackTimerRef.current !== null) {
+      window.clearTimeout(volumeFeedbackTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -87,7 +118,13 @@ export default function RoomKeyboardShortcuts({
 
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         event.preventDefault();
-        playerRef.current?.changeVolumeBy(event.key === "ArrowUp" ? 0.05 : -0.05);
+        const nextVolume = playerRef.current?.changeVolumeBy(
+          event.key === "ArrowUp" ? 0.05 : -0.05
+        );
+
+        if (nextVolume !== undefined && nextVolume !== null) {
+          showVolumeFeedback(nextVolume);
+        }
         return;
       }
 
@@ -130,45 +167,79 @@ export default function RoomKeyboardShortcuts({
     onToggleFullscreen,
     playerRef,
     setCameraEnabled,
+    showVolumeFeedback,
     toggleMicrophone,
     status
   ]);
 
-  return helpOpen ? (
-    <div
-      className="shortcutHelpBackdrop"
-      role="presentation"
-      onPointerDown={() => setHelpOpen(false)}
-    >
-      <section
-        className="shortcutHelpDialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="shortcut-help-title"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <header className="shortcutHelpHeader">
-          <h2 id="shortcut-help-title">Keyboard Shortcuts</h2>
-          <button
-            type="button"
-            className="shortcutHelpClose"
-            aria-label="Close keyboard shortcuts"
-            title="Close"
-            autoFocus
-            onClick={() => setHelpOpen(false)}
+  const volumePercent = volumeLevel === null
+    ? null
+    : volumePercentage(volumeLevel);
+
+  return (
+    <Fragment>
+      {volumeLevel !== null && volumePercent !== null && (
+        <output
+          className="volumeShortcutHud"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          aria-label={`Volume ${volumePercent} percent`}
+        >
+          {volumePercent === 0 ? (
+            <VolumeX size={20} aria-hidden="true" />
+          ) : (
+            <Volume2 size={20} aria-hidden="true" />
+          )}
+          <span className="volumeShortcutTrack" aria-hidden="true">
+            <span
+              className="volumeShortcutFill"
+              style={{ transform: `scaleX(${volumeLevel})` }}
+            />
+          </span>
+          <span className="volumeShortcutValue" aria-hidden="true">
+            {volumePercent}%
+          </span>
+        </output>
+      )}
+
+      {helpOpen && (
+        <div
+          className="shortcutHelpBackdrop"
+          role="presentation"
+          onPointerDown={() => setHelpOpen(false)}
+        >
+          <section
+            className="shortcutHelpDialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shortcut-help-title"
+            onPointerDown={(event) => event.stopPropagation()}
           >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </header>
-        <dl className="shortcutHelpList">
-          {SHORTCUTS.map(([keys, action]) => (
-            <div key={keys}>
-              <dt><kbd>{keys}</kbd></dt>
-              <dd>{action}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-    </div>
-  ) : null;
+            <header className="shortcutHelpHeader">
+              <h2 id="shortcut-help-title">Keyboard Shortcuts</h2>
+              <button
+                type="button"
+                className="shortcutHelpClose"
+                aria-label="Close keyboard shortcuts"
+                title="Close"
+                autoFocus
+                onClick={() => setHelpOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </header>
+            <dl className="shortcutHelpList">
+              {SHORTCUTS.map(([keys, action]) => (
+                <div key={keys}>
+                  <dt><kbd>{keys}</kbd></dt>
+                  <dd>{action}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </div>
+      )}
+    </Fragment>
+  );
 }
